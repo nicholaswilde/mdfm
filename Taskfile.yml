@@ -107,6 +107,11 @@ tasks:
     cmds:
       - rumdl fmt .
 
+  fmt:toml:
+    desc: Format TOML files with taplo
+    cmds:
+      - taplo fmt
+
   lint:
     desc: Lint code with clippy
     cmds:
@@ -116,6 +121,12 @@ tasks:
     desc: Lint Markdown files with rumdl
     cmds:
       - rumdl check .
+
+  lint:toml:
+    desc: Lint and check formatting of TOML files with taplo
+    cmds:
+      - taplo lint
+      - taplo fmt --check
 
   coverage:
     desc: Run tests and generate coverage report (stdout summary)

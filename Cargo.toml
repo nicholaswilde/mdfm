@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Nicholas Wilde"]
 description = "jq for Markdown frontmatter: query, mutate, delete, and validate YAML and TOML frontmatter without modifying the Markdown body"
+license = "Apache-2.0"
+repository = "https://github.com/nicholaswilde/mdfm"
+homepage = "https://github.com/nicholaswilde/mdfm"
+readme = "docs/README.md"
+keywords = ["markdown", "frontmatter", "yaml", "toml", "cli"]
+categories = ["command-line-utilities", "text-processing"]
 
 [lib]
 name = "mdfm"

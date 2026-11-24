@@ -1,0 +1,15 @@
+include = ["**/*.toml"]
+exclude = ["**/target/**", "**/node_modules/**", "**/.venv/**"]
+
+[formatting]
+align_entries = false
+array_auto_collapse = true
+array_auto_expand = true
+array_trailing_comma = true
+compact_arrays = true
+compact_inline_tables = false
+crlf = false
+indent_entries = false
+indent_string = "  "
+reorder_keys = false
+trailing_newline = true

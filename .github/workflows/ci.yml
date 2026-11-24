@@ -118,12 +118,25 @@ jobs:
     - name: Run rumdl linter
       uses: rvben/rumdl@v0
 
+  taplo:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+    - name: Install taplo
+      uses: taiki-e/install-action@taplo
+    - name: Lint and check TOML formatting
+      run: |
+        taplo lint
+        taplo fmt --check
+
   coveralls:
     runs-on: ubuntu-latest
     needs:
       - rustfmt
       - clippy
       - markdownlint
+      - taplo
       - test
     steps:
       - name: Checkout
