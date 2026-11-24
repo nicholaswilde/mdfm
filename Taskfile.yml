@@ -71,6 +71,16 @@ tasks:
     cmds:
       - cargo run -- --help
 
+  completions:
+    desc: Generate shell completions for bash, zsh, fish, powershell, and elvish
+    cmds:
+      - mkdir -p completions
+      - cargo run --quiet -- completions bash > completions/mdfm.bash
+      - cargo run --quiet -- completions zsh > completions/_mdfm
+      - cargo run --quiet -- completions fish > completions/mdfm.fish
+      - cargo run --quiet -- completions powershell > completions/_mdfm.ps1
+      - cargo run --quiet -- completions elvish > completions/mdfm.elv
+
   check:
     desc: Check code for errors without generating binary
     cmds:

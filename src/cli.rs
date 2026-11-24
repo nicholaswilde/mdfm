@@ -1,4 +1,5 @@
 pub use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
+pub use clap_complete::Shell;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -94,5 +95,10 @@ pub enum Commands {
         /// Path to JSON Schema file
         #[arg(long, env = "MDFM_SCHEMA")]
         schema: Option<PathBuf>,
+    },
+    /// Generate shell completion scripts (bash, zsh, fish, powershell, elvish)
+    Completions {
+        /// Target shell
+        shell: Shell,
     },
 }

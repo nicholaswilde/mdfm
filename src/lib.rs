@@ -20,6 +20,12 @@ pub fn run() -> anyhow::Result<()> {
 
 /// Dispatch a parsed `Cli` invocation writing formatted output to `out`.
 pub fn run_app(cli: Cli, out: &mut dyn Write) -> anyhow::Result<()> {
+    if let Commands::Completions { shell } = &cli.command {
+        let mut cmd = Cli::command();
+        clap_complete::generate(*shell, &mut cmd, "mdfm", out);
+        return Ok(());
+    }
+
     let cli_schema = match &cli.command {
         Commands::Check { schema, .. } => schema.as_deref(),
         _ => None,
@@ -43,6 +49,7 @@ pub fn run_app(cli: Cli, out: &mut dyn Write) -> anyhow::Result<()> {
         Commands::Check { paths, .. } => {
             commands::check::execute(paths, filter.as_ref(), &resolved, out)
         }
+        Commands::Completions { .. } => unreachable!("handled before config resolution"),
     }
 }
 
@@ -110,6 +117,20 @@ mod tests {
                 assert_eq!(schema, Some(PathBuf::from(".mdfm-schema.json")));
             }
             _ => panic!("expected check subcommand"),
+        }
+    }
+
+    #[test]
+    fn cli_generates_completions_for_all_shells() {
+        for shell in ["bash", "zsh", "fish", "powershell", "elvish"] {
+            let cli = Cli::try_parse_from(["mdfm", "completions", shell]).unwrap();
+            let mut buf = Vec::new();
+            run_app(cli, &mut buf).unwrap();
+            let script = String::from_utf8(buf).unwrap();
+            assert!(
+                script.contains("mdfm"),
+                "completion script for {shell} should mention mdfm"
+            );
         }
     }
 }
