@@ -1,0 +1,27 @@
+# =============================================================================
+# mdfm Configuration Example (config.example.toml)
+# =============================================================================
+# Copy this file to .mdfm.toml in your project root or to
+# ~/.config/mdfm/config.toml (or %APPDATA%\mdfm\config.toml on Windows)
+# to customize default behavior.
+#
+# Settings resolve in precedence order:
+#   CLI Flags > Environment Variables > Project-Local .mdfm.toml > User Global Config > Defaults
+# =============================================================================
+
+# Default frontmatter format when creating new frontmatter on files without any.
+# Supported values: "yaml" (default), "toml"
+# CLI: --format <yaml|toml> | Env: MDFM_FORMAT
+# default_format = "yaml"
+
+# Output format for command results.
+# Supported values: "table" (default), "json", "plain"
+# CLI: --output <table|json|plain> | Env: MDFM_OUTPUT
+# output = "table"
+
+# Default JSON Schema path for `mdfm check`.
+# CLI: --schema <path> | Env: MDFM_SCHEMA
+# schema = ".mdfm-schema.json"
+
+# Glob patterns to exclude when walking directories (in addition to .gitignore).
+# ignore = ["drafts/**", "CHANGELOG.md"]

@@ -1,0 +1,306 @@
+---
+# Based on ripgrep and tfa release action:
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      fake_version:
+        description: 'Fake version for testing (e.g. 0.1.0)'
+        required: false
+        default: '0.0.0-test'
+  push:
+    tags:
+    - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  create-release:
+    name: create-release
+    needs: [ci]
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Get the release version
+        id: get_version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.fake_version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          fi
+      - name: Show the version
+        run: |
+          echo "version is: ${{ steps.get_version.outputs.version }}"
+      - name: Check that tag version matches Cargo.toml version
+        if: github.event_name != 'workflow_dispatch'
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            cargo_version=$(grep "^version =" Cargo.toml | head -n1 | cut -d'"' -f2)
+            tag_version="${GITHUB_REF#refs/tags/v}"
+            if [[ "$tag_version" != "$cargo_version" ]]; then
+              echo "Tag version ($tag_version) does not match Cargo.toml version ($cargo_version)"
+              exit 1
+            fi
+          fi
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ github.ref_name }} --draft --prerelease --verify-tag --title ${{ steps.get_version.outputs.version }}
+
+  build-release:
+    name: build-release
+    needs: ['create-release']
+    runs-on: ${{ matrix.os }}
+    env:
+      CARGO: cargo
+      TARGET_FLAGS: ""
+      TARGET_DIR: ./target
+      CROSS_VERSION: v0.2.5
+      RUST_BACKTRACE: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        build: [linux, linux-arm, linux-armv7, linux-armv6, macos, macos-arm, win-msvc, win32-msvc]
+        include:
+        - build: linux
+          os: ubuntu-latest
+          rust: stable
+          target: x86_64-unknown-linux-musl
+        - build: linux-arm
+          os: ubuntu-latest
+          rust: stable
+          target: aarch64-unknown-linux-musl
+        - build: linux-armv7
+          os: ubuntu-latest
+          rust: stable
+          target: armv7-unknown-linux-musleabihf
+        - build: linux-armv6
+          os: ubuntu-latest
+          rust: stable
+          target: arm-unknown-linux-musleabi
+        - build: macos
+          os: macos-latest
+          rust: stable
+          target: x86_64-apple-darwin
+        - build: macos-arm
+          os: macos-latest
+          rust: stable
+          target: aarch64-apple-darwin
+        - build: win-msvc
+          os: windows-latest
+          rust: stable
+          target: x86_64-pc-windows-msvc
+        - build: win32-msvc
+          os: windows-latest
+          rust: stable
+          target: i686-pc-windows-msvc
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v6
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@master
+      with:
+        toolchain: ${{ matrix.rust }}
+        targets: ${{ matrix.target }}
+
+    - name: Rust Cache
+      uses: swatinem/rust-cache@v2
+      with:
+        key: ${{ matrix.target }}
+        cache-targets: false
+
+    - name: Use Cross
+      if: matrix.os == 'ubuntu-latest' && matrix.target != ''
+      shell: bash
+      run: |
+        dir="$RUNNER_TEMP/cross-download"
+        mkdir "$dir"
+        echo "$dir" >> $GITHUB_PATH
+        cd "$dir"
+        curl -LO "https://github.com/cross-rs/cross/releases/download/$CROSS_VERSION/cross-x86_64-unknown-linux-musl.tar.gz"
+        tar xf cross-x86_64-unknown-linux-musl.tar.gz
+        echo "CARGO=cross" >> $GITHUB_ENV
+
+    - name: Set target variables
+      shell: bash
+      run: |
+        echo "TARGET_FLAGS=--target ${{ matrix.target }}" >> $GITHUB_ENV
+        echo "TARGET_DIR=./target/${{ matrix.target }}" >> $GITHUB_ENV
+        if [[ "${{ matrix.os }}" == windows-* ]]; then
+          bin="target/${{ matrix.target }}/release/mdfm.exe"
+        else
+          bin="target/${{ matrix.target }}/release/mdfm"
+        fi
+        echo "BIN=$bin" >> $GITHUB_ENV
+
+    - name: Build release binary
+      shell: bash
+      run: |
+        ${{ env.CARGO }} build --release --verbose ${{ env.TARGET_FLAGS }}
+
+    - name: Build archive
+      shell: bash
+      run: |
+        outdir="${{ env.TARGET_DIR }}/release"
+        staging="mdfm-${{ needs.create-release.outputs.version }}-${{ matrix.target }}"
+        echo "staging is: $staging"
+        mkdir -p "$staging"
+
+        # Copy binary
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          cp "$outdir/mdfm.exe" "$staging/"
+        else
+          cp "$outdir/mdfm" "$staging/"
+        fi
+
+        # Copy docs
+        cp docs/README.md LICENSE "$staging/"
+
+        # Copy example configuration
+        if [ -f "assets/config.example.toml" ]; then
+          cp assets/config.example.toml "$staging/"
+        fi
+
+        # Compress
+        if [ "${{ matrix.os }}" = "windows-latest" ]; then
+          7z a "$staging.zip" "$staging"
+          certutil -hashfile "$staging.zip" SHA256 > "$staging.zip.sha256"
+          echo "ASSET=$staging.zip" >> $GITHUB_ENV
+          echo "ASSET_SUM=$staging.zip.sha256" >> $GITHUB_ENV
+        else
+          tar czf "$staging.tar.gz" "$staging"
+          shasum -a 256 "$staging.tar.gz" > "$staging.tar.gz.sha256"
+          echo "ASSET=$staging.tar.gz" >> $GITHUB_ENV
+          echo "ASSET_SUM=$staging.tar.gz.sha256" >> $GITHUB_ENV
+        fi
+
+    - name: Install cargo-deb
+      if: startsWith(matrix.build, 'linux')
+      shell: bash
+      run: |
+        CARGO_DEB_VER="3.8.0"
+        curl -LO "https://github.com/kornelski/cargo-deb/releases/download/v${CARGO_DEB_VER}/cargo-deb_${CARGO_DEB_VER}-1_amd64.deb"
+        sudo dpkg -i "cargo-deb_${CARGO_DEB_VER}-1_amd64.deb"
+        rm -f "cargo-deb_${CARGO_DEB_VER}-1_amd64.deb"
+
+    - name: Build Debian package
+      if: startsWith(matrix.build, 'linux')
+      shell: bash
+      run: |
+        cargo deb --no-build --target ${{ matrix.target }}
+
+    - name: Upload Debian package artifact
+      if: startsWith(matrix.build, 'linux')
+      uses: actions/upload-artifact@v4
+      with:
+        name: deb-${{ matrix.build }}
+        path: target/debian/*.deb
+        retention-days: 1
+
+    - name: Upload release archive
+      uses: softprops/action-gh-release@v2
+      if: github.ref_type == 'tag'
+      with:
+        files: |
+          ${{ env.ASSET }}
+          ${{ env.ASSET_SUM }}
+          target/debian/*.deb
+        draft: true
+
+  publish-deb:
+    name: publish-deb
+    needs: ['create-release', 'build-release']
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Download all Debian packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: deb-*
+          merge-multiple: true
+          path: debs/
+
+      - name: Push .deb packages to nicholaswilde/apt
+        if: github.ref_type == 'tag'
+        env:
+          APT_REPO_TOKEN: ${{ secrets.APT_REPO_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Clone apt repo using PAT
+          git clone "https://x-access-token:${APT_REPO_TOKEN}@github.com/nicholaswilde/apt.git" apt-repo
+
+          # Copy all generated Debian packages into pool/main
+          cp debs/*.deb apt-repo/pool/main/
+
+          # Commit and push changes
+          cd apt-repo
+          git add pool/main/*.deb
+          if ! git diff --staged --quiet; then
+            git commit -m "feat(pkg): add mdfm ${{ needs.create-release.outputs.version }} debs (amd64, arm64, armhf, armel)"
+            git push origin main
+          fi
+
+  publish-release:
+    name: publish-release
+    needs: ['create-release', 'build-release']
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    steps:
+      - name: Publish GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit ${{ github.ref_name }} --draft=false --prerelease=false --repo ${{ github.repository }}
+
+  update-homebrew-tap:
+    name: update-homebrew-tap
+    needs: ['create-release', 'publish-release']
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    steps:
+      - name: Trigger Homebrew Tap update
+        env:
+          APT_REPO_TOKEN: ${{ secrets.APT_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -f -X POST \
+            -H "Authorization: token ${APT_REPO_TOKEN}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/nicholaswilde/homebrew-tap/dispatches \
+            -d "{\"event_type\": \"update-formula\", \"client_payload\": {\"formula\": \"mdfm\", \"version\": \"${{ needs.create-release.outputs.version }}\"}}"
+
+  update-scoop-bucket:
+    name: update-scoop-bucket
+    needs: ['create-release', 'publish-release']
+    runs-on: ubuntu-latest
+    if: github.ref_type == 'tag'
+    steps:
+      - name: Trigger Scoop Bucket update
+        env:
+          APT_REPO_TOKEN: ${{ secrets.APT_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -f -X POST \
+            -H "Authorization: token ${APT_REPO_TOKEN}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/nicholaswilde/scoop-bucket/dispatches \
+            -d "{\"event_type\": \"update-manifest\", \"client_payload\": {\"manifest\": \"mdfm\", \"version\": \"${{ needs.create-release.outputs.version }}\"}}"
