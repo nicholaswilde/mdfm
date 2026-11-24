@@ -161,7 +161,7 @@ fn cli_set_dry_run_and_body_untouched() {
     let orig_yaml_body = mdfm::frontmatter::split(&orig_yaml).body.to_string();
 
     let orig_toml = fs::read_to_string(&toml_file).unwrap();
-    let orig_toml_body = mdfm::frontmatter::split(&orig_toml).body.to_string();
+    let orig_toml_doc = mdfm::frontmatter::split(&orig_toml);
 
     // 1. Dry run must not modify the file on disk.
     let Some(mut cmd) = mdfm_cmd() else { return };
@@ -220,10 +220,14 @@ fn cli_set_dry_run_and_body_untouched() {
         .success();
 
     let updated_toml = fs::read_to_string(&toml_file).unwrap();
-    assert!(updated_toml.contains("# Post metadata header\n"));
-    assert!(updated_toml.contains("title = \"Updated TOML\" # inline comment\n"));
-    assert!(updated_toml.contains("draft = true\n"));
-    assert_eq!(mdfm::frontmatter::split(&updated_toml).body, orig_toml_body);
+    let eol = orig_toml_doc.line_ending.as_str();
+    assert!(updated_toml.contains(&format!("# Post metadata header{eol}")));
+    assert!(updated_toml.contains(&format!("title = \"Updated TOML\" # inline comment{eol}")));
+    assert!(updated_toml.contains(&format!("draft = true{eol}")));
+    assert_eq!(
+        mdfm::frontmatter::split(&updated_toml).body,
+        orig_toml_doc.body
+    );
 }
 
 #[test]
@@ -239,12 +243,52 @@ fn cli_set_creates_frontmatter_when_absent() {
         .success();
 
     let updated = fs::read_to_string(&plain_file).unwrap();
-    assert!(updated.starts_with("+++\n"));
     let doc = mdfm::frontmatter::split(&updated);
+    assert_eq!(
+        doc.line_ending,
+        mdfm::frontmatter::split(&orig_content).line_ending
+    );
+    assert!(updated.starts_with(&format!("+++{}", doc.line_ending.as_str())));
     assert_eq!(doc.body, orig_content);
     let fm = doc.parse_frontmatter().unwrap().unwrap();
     assert_eq!(fm.get("title"), Some(serde_json::json!("Created")));
     assert_eq!(fm.get("draft"), Some(serde_json::json!(false)));
+}
+
+#[test]
+fn cli_set_preserves_crlf_line_endings() {
+    let tmp = tempfile::tempdir().unwrap();
+    let toml_file = tmp.path().join("crlf_toml.md");
+    let toml_orig = "+++\r\n# Post metadata header\r\ntitle = \"TOML Post\" # inline comment\r\ndraft = false\r\n+++\r\n\r\n# Body\r\n\r\nPreserved verbatim.\r\n";
+    fs::write(&toml_file, toml_orig).unwrap();
+    let orig_toml_body = mdfm::frontmatter::split(toml_orig).body.to_string();
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["set", "title=Updated TOML", "draft=true"])
+        .arg(&toml_file)
+        .assert()
+        .success();
+
+    let updated_toml = fs::read_to_string(&toml_file).unwrap();
+    assert!(updated_toml.contains("# Post metadata header\r\n"));
+    assert!(updated_toml.contains("title = \"Updated TOML\" # inline comment\r\n"));
+    assert!(updated_toml.contains("draft = true\r\n"));
+    assert_eq!(mdfm::frontmatter::split(&updated_toml).body, orig_toml_body);
+
+    let plain_file = tmp.path().join("crlf_plain.md");
+    let plain_orig = "# Plain CRLF\r\n\r\nNo frontmatter yet.\r\n";
+    fs::write(&plain_file, plain_orig).unwrap();
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["--format", "toml", "set", "title=Created", "draft=false"])
+        .arg(&plain_file)
+        .assert()
+        .success();
+
+    let updated_plain = fs::read_to_string(&plain_file).unwrap();
+    assert!(updated_plain.starts_with("+++\r\n"));
+    assert!(updated_plain.contains("title = \"Created\"\r\n"));
+    assert_eq!(mdfm::frontmatter::split(&updated_plain).body, plain_orig);
 }
 
 #[test]
