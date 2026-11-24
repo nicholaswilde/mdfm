@@ -1,19 +1,22 @@
 # mdfm
 
-> `jq` for Markdown frontmatter: single-binary Rust CLI for querying, mutating, deleting, and validating YAML and TOML frontmatter without modifying the Markdown body.
+> `jq` for Markdown frontmatter: single-binary Rust CLI for querying, mutating, deleting, and validating YAML (`---`) and TOML (`+++`) frontmatter without modifying the Markdown body.
+
+`mdfm` operates on byte offsets so Markdown bodies, UTF-8 BOMs, `LF`/`CRLF` line endings, closing delimiters (`---` vs `...`), and untouched slices survive edits verbatim. TOML frontmatter is mutated losslessly via `toml_edit` to preserve comments, formatting, and key order. Supports dot-path queries, `--where` filtering, typed value parsing, `--dry-run` previews, `.gitignore`-aware directory walking, and pure-Rust JSON Schema validation across Linux, macOS, and Windows.
 
 ## Documentation
 
 - [docs/README.md](docs/README.md): Project overview, installation, and usage quickstart.
 - [AGENTS.md](AGENTS.md): Architecture, tech stack, conventions, and quality gates.
 - [assets/config.example.toml](assets/config.example.toml): Annotated example configuration file.
+- [Full Context (llms-full.txt)](llms-full.txt): Single-file compiled documentation, CLI reference, filter syntax, and architecture specs for LLMs.
 
 ## Core Modules
 
 - [src/main.rs](src/main.rs): Thin CLI binary entry point delegating to `mdfm::run()`.
 - [src/lib.rs](src/lib.rs): Library exports and command dispatch (`run`, `run_app`).
 - [src/cli.rs](src/cli.rs): `clap` CLI flags and subcommands (`get`, `set`, `del`, `check`).
-- [src/config.rs](src/config.rs): Layered configuration precedence (CLI > env > `.mdfm.toml` > global config > defaults).
+- [src/config.rs](src/config.rs): Layered configuration precedence (CLI > `MDFM_*` env > `.mdfm.toml` > user global config > defaults).
 - [src/frontmatter/mod.rs](src/frontmatter/mod.rs): Zero-copy byte-offset frontmatter splitter, renderer, and `FrontmatterData` enum.
 - [src/frontmatter/yaml.rs](src/frontmatter/yaml.rs): YAML dot-path get/set/del helpers.
 - [src/frontmatter/toml.rs](src/frontmatter/toml.rs): Lossless TOML dot-path get/set/del helpers via `toml_edit`.
@@ -31,4 +34,10 @@
 - [build.rs](build.rs): Compile-time git version injection (`PROJECT_VERSION`).
 - [scripts/release.sh](scripts/release.sh): Automated version bump, tag, and atomic push script.
 - [scripts/release_summary.py](scripts/release_summary.py): Categorized GitHub release notes generator.
+
+## Optional
+
+- [.github/workflows/ci.yml](.github/workflows/ci.yml): Multi-OS and multi-arch CI matrix (`rustfmt`, `clippy`, `rumdl`, `cross`, Coveralls).
+- [.github/workflows/release.yml](.github/workflows/release.yml): Automated release archives, `.deb` publishing, Homebrew tap, and Scoop bucket updates.
+- [tests/cli.rs](tests/cli.rs): End-to-end CLI integration tests and CRLF preservation suite.
 - [LICENSE](LICENSE): Apache License 2.0.

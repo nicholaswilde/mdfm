@@ -1,0 +1,318 @@
+# mdfm
+
+> `jq` for Markdown frontmatter: single-binary Rust CLI for querying, mutating, deleting, and validating YAML (`---`) and TOML (`+++`) frontmatter without modifying the Markdown body.
+
+`mdfm` operates on byte offsets so Markdown bodies, UTF-8 BOMs, `LF`/`CRLF` line endings, closing delimiters (`---` vs `...`), and untouched slices survive edits verbatim. TOML frontmatter is mutated losslessly via `toml_edit` to preserve comments, formatting, and key order. Supports dot-path queries, `--where` filtering, typed value parsing, `--dry-run` previews, `.gitignore`-aware directory walking, and pure-Rust JSON Schema validation across Linux, macOS, and Windows.
+
+---
+
+## Table of Contents
+
+1. [Overview & Key Invariants](#overview--key-invariants)
+2. [Architecture & Repository Layout](#architecture--repository-layout)
+3. [Installation & Building](#installation--building)
+4. [CLI Commands & Usage](#cli-commands--usage)
+5. [Filter Expressions (--where)](#filter-expressions---where)
+6. [Configuration Reference](#configuration-reference)
+7. [Frontmatter Engine & Preservation Guarantees](#frontmatter-engine--preservation-guarantees)
+8. [Development, Testing & Quality Gates](#development-testing--quality-gates)
+9. [License & Maintainer](#license--maintainer)
+
+---
+
+## Overview & Key Invariants
+
+- **Byte-Exact Body Preservation:** Never splits or reconstructs Markdown bodies with `str::lines()`. Uses byte offsets to preserve UTF-8 BOMs (`\u{FEFF}`), `LF`/`CRLF` line endings, closing delimiter styles (`---` vs `...` for YAML, `+++` for TOML), trailing newline presence, and untouched body slices verbatim.
+- **Lossless TOML Edits:** Mutates TOML frontmatter through `toml_edit::DocumentMut` so comments, inline comments, spacing, and key ordering survive edits.
+- **YAML & TOML Parity:** Supports dot-separated key paths (e.g., `author.name`, `meta.seo.title`) across both YAML and TOML frontmatter blocks.
+- **Rich Filtering (`--where`):** Recursive-descent expression parser supporting comparison operators, `contains` (strings and arrays), logical combinators (`and`/`&&`, `or`/`||`, `not`/`!`), parentheses, dot paths, and truthiness checks.
+- **Pure-Rust Multi-Arch Portability:** Uses `jsonschema` with `default-features = false` and avoids native TLS/C dependencies so static/musl and ARM `cross` builds succeed cleanly.
+- **Repository-Aware Walking:** Walks directories via `ignore` (respecting `.gitignore`) plus custom `ignore` globs from configuration.
+
+---
+
+## Architecture & Repository Layout
+
+### Directory Structure
+
+```text
+mdfm/
+├── Cargo.toml                 # Crate manifest, deps, release/ci profiles, cargo-deb metadata
+├── Taskfile.yml               # Task runner automation (check, test, fmt, lint, build, coverage, release)
+├── build.rs                   # Compile-time git describe version injection (PROJECT_VERSION)
+├── AGENTS.md                  # Agent development conventions, tool rules, and quality gates
+├── llms.txt                   # Concise llmstxt.org index
+├── llms-full.txt              # Compiled full-context documentation (this file)
+├── LICENSE                    # Apache License 2.0
+├── assets/
+│   └── config.example.toml    # Annotated example configuration file
+├── docs/
+│   └── README.md              # Project overview, installation, and quickstart
+├── scripts/
+│   ├── release.sh             # Version bump, validation, tagging, and atomic push
+│   └── release_summary.py     # Categorized GitHub release notes generator
+├── .github/
+│   └── workflows/
+│       ├── ci.yml             # Multi-OS/arch tests, rustfmt, clippy, rumdl, Coveralls
+│       └── release.yml        # Multi-arch archives, .deb apt publish, Homebrew & Scoop dispatches
+├── src/
+│   ├── main.rs                # Thin binary wrapper calling mdfm::run()
+│   ├── lib.rs                 # Library exports and CLI dispatch (run, run_app)
+│   ├── cli.rs                 # clap derive/env definitions (get, set, del, check)
+│   ├── config.rs              # Layered configuration resolver and local .mdfm.toml discovery
+│   ├── frontmatter/
+│   │   ├── mod.rs             # Zero-copy byte-offset splitter, renderer, FrontmatterData enum
+│   │   ├── yaml.rs            # YAML dot-path get/set/del helpers (serde_yaml_ng)
+│   │   ├── toml.rs            # Lossless TOML dot-path get/set/del helpers (toml_edit)
+│   │   └── filter.rs          # --where expression lexer, parser, and evaluator
+│   └── commands/
+│       ├── mod.rs             # Shared .gitignore-aware file walker and output formatters
+│       ├── get.rs             # get subcommand handler
+│       ├── set.rs             # set subcommand handler (--dry-run, typed CLI value parser)
+│       ├── del.rs             # del subcommand handler (--dry-run)
+│       └── check.rs           # check JSON Schema validation subcommand handler
+└── tests/
+    ├── cli.rs                 # End-to-end CLI and CRLF preservation integration tests
+    └── fixtures/              # Sample YAML, TOML, invalid, body-only Markdown & JSON Schema
+```
+
+### Technology Stack
+
+- **Language & Edition:** Rust (Edition 2021)
+- **CLI Parsing:** `clap` 4.5 (`derive`, `env`)
+- **Frontmatter & Serialization:** `toml_edit` 0.22, `toml` 0.8, `serde` 1.0, `serde_json` 1.0, `serde_yaml_ng` 0.10
+- **Directory Walking:** `ignore` 0.4
+- **Schema Validation:** `jsonschema` 0.29 (`default-features = false`)
+- **Terminal Output:** `comfy-table` 7.1, `owo-colors` 4.2 (`supports-colors`)
+- **Error Handling:** `thiserror` 2.0, `anyhow` 1.0
+- **Testing:** `assert_cmd` 2.0, `predicates` 3.1, `tempfile` 3.16
+- **Build Profiles:**
+  - `[profile.release]`: `opt-level = "z"`, `lto = true`, `codegen-units = 1`, `panic = "abort"`, `strip = true`
+  - `[profile.ci]`: `inherits = "dev"`, `incremental = false`, `debug = 0`
+
+---
+
+## Installation & Building
+
+### Package Managers & Source
+
+```bash
+# Homebrew (macOS / Linux)
+brew install nicholaswilde/homebrew-tap/mdfm
+
+# Cargo (from source)
+cargo install --git https://github.com/nicholaswilde/mdfm
+```
+
+```powershell
+# Scoop (Windows)
+scoop bucket add nicholaswilde https://github.com/nicholaswilde/scoop-bucket
+scoop install nicholaswilde/mdfm
+```
+
+### Release Targets
+
+Automated release builds target 8 platforms:
+- Linux musl: `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-musl`, `armv7-unknown-linux-musleabihf`, `arm-unknown-linux-musleabi` (plus `.deb` packages via `cargo-deb`)
+- macOS: `x86_64-apple-darwin`, `aarch64-apple-darwin`
+- Windows: `x86_64-pc-windows-msvc`, `i686-pc-windows-msvc`
+
+---
+
+## CLI Commands & Usage
+
+```text
+Usage: mdfm [OPTIONS] <COMMAND>
+```
+
+### Global Options
+
+| Flag | Env Var | Values / Default | Description |
+| --- | --- | --- | --- |
+| `--format <FORMAT>` | `MDFM_FORMAT` | `yaml` (default), `toml` | Frontmatter format used when creating frontmatter on files without any |
+| `--output <OUTPUT>` | `MDFM_OUTPUT` | `table` (default), `json`, `plain` | Output presentation format |
+| `--where <EXPR>` | — | Filter expression | Filter target files by frontmatter predicate before running command |
+| `-C, --config <PATH>` | `MDFM_CONFIG` | File path | Explicit configuration file override (TOML, YAML, or JSON) |
+| `-h, --help` | — | — | Print help |
+| `-V, --version` | — | — | Print version (`PROJECT_VERSION` from git describe) |
+
+### `mdfm get <KEY> [PATHS]...`
+
+Query a frontmatter key (supporting dot paths like `author.name`) across Markdown files. Defaults to `.` when `[PATHS]...` is omitted.
+
+- **`table`:** Two-column table (`File`, `Value`).
+- **`json`:** JSON array of `{ "file": "...", "value": ... }` objects.
+- **`plain`:** Single explicit file prints raw scalar value (`Nick`); multiple files or directory prints `<file>\t<value>`.
+
+```bash
+# Single file scalar query
+mdfm --output plain get author.name posts/hello.md
+
+# Directory query filtered by --where as JSON
+mdfm --where 'draft == true' --output json get title posts/
+```
+
+### `mdfm set [--dry-run] <KEY=VALUE [PATHS...]>...`
+
+Update or insert frontmatter keys across Markdown files. Creates frontmatter using `default_format` (`yaml` or `toml`) if a target file has none.
+
+- **`--dry-run`:** Preview changes (`would update (dry-run)`) without modifying files on disk.
+- **Argument partitioning:** Arguments containing `=` (with non-empty key) are parsed as `KEY=VALUE` assignments; remaining arguments are target file/directory paths (defaults to `.`).
+- **Typed value parsing (`parse_cli_value`):**
+  - Booleans: `true`, `false`
+  - Null: `null`
+  - Integers & finite floats: `42`, `-7`, `2.5` (special non-finite strings like `inf`/`nan` stay strings)
+  - JSON literals starting with `[`, `{`, or `"`: arrays (`["rust","cli"]`), objects (`{"a":1}`), explicit quoted strings (`"1.0"`)
+  - Fallback: raw string (`Hello World`)
+
+```bash
+# Preview changes first
+mdfm set draft=false 'tags=["rust","cli"]' weight=42 posts/ --dry-run
+
+# Apply updates
+mdfm set draft=false author.name=Nicholas posts/
+
+# Create TOML frontmatter on files without frontmatter
+mdfm --format toml set title=Created draft=false notes/plain.md
+```
+
+### `mdfm del [--dry-run] <KEY [PATHS...]>...`
+
+Delete one or more frontmatter keys (including nested dot paths).
+
+- **`--dry-run`:** Preview deletions without writing to disk.
+- **Argument partitioning:** First positional argument is always a key; subsequent arguments are treated as keys until a path-like token (`.`, `..`, containing `/` or `\`, or ending in `.md`/`.markdown`, or existing on disk) begins the target paths list (defaults to `.`).
+
+```bash
+mdfm del draft author.bio posts/ --dry-run
+mdfm del draft legacy_id posts/
+```
+
+### `mdfm check [--schema <SCHEMA>] [PATHS]...`
+
+Validate frontmatter of Markdown files against a JSON Schema file (`--schema`, `MDFM_SCHEMA`, or `schema` in config).
+
+- Exits `0` when all matched files validate cleanly.
+- Exits non-zero with file-level validation error details (`ok` / `fail` in `table`, structured objects in `json`, `<file>\terror: ...` in `plain`) when any file fails parsing or schema validation.
+
+```bash
+mdfm check --schema .mdfm-schema.json posts/
+mdfm --output json check --schema schema.json docs/
+```
+
+---
+
+## Filter Expressions (`--where`)
+
+Implemented in `src/frontmatter/filter.rs` as a recursive-descent parser evaluated against each file's frontmatter JSON representation.
+
+### Supported Syntax
+
+- **Key paths:** Bare identifiers with `.` / `-` / `_` (e.g., `draft`, `author.name`, `meta.word-count`).
+- **Truthiness shorthand:** Bare key path (e.g., `--where 'draft'`) evaluates truthiness (non-null, `true`, non-zero number, non-empty string/array/object).
+- **Comparison operators:** `==`, `!=`, `>`, `>=`, `<`, `<=` (supports integer/float numeric comparisons and string comparisons).
+- **Containment (`contains` / `CONTAINS`):**
+  - On arrays: checks element equality (`tags contains "rust"`).
+  - On strings: checks substring match (`title contains "Frontmatter"`).
+- **Logical operators & grouping:**
+  - `not` / `NOT` / `!` (highest precedence)
+  - `and` / `AND` / `&&`
+  - `or` / `OR` / `||` (lowest precedence)
+  - Parentheses `(...)` for explicit grouping
+- **Literals:** Quoted strings (`"..."` or `'...'` with escape handling), booleans (`true`, `false`), `null`, integers, floats.
+
+### Examples
+
+```bash
+mdfm --where 'draft == true' get title posts/
+mdfm --where 'author.name == "Nick" and tags contains "rust"' get title posts/
+mdfm --where '(draft == false or weight >= 10) and not (author.name == "Bob")' get title posts/
+```
+
+---
+
+## Configuration Reference
+
+`mdfm` resolves settings in strict precedence order (highest to lowest):
+
+1. **CLI flags:** `--format`, `--output`, `--schema`, `-C`/`--config`
+2. **Environment variables:** `MDFM_FORMAT`, `MDFM_OUTPUT`, `MDFM_SCHEMA`, `MDFM_CONFIG`
+3. **Explicit config or project-local `.mdfm.toml`:** Walks upward from the current working directory to find `.mdfm.toml` (unless overridden by `--config` / `MDFM_CONFIG`, which supports TOML, YAML, or JSON).
+4. **User global config:**
+   - Linux/macOS: `$XDG_CONFIG_HOME/mdfm/config.{toml,yaml,yml,json}` (fallback `~/.config/mdfm/config.*`)
+   - Windows: `%APPDATA%\mdfm\config.{toml,yaml,yml,json}`
+5. **Built-in defaults:** `default_format = "yaml"`, `output = "table"`, `schema = None`, `ignore = []`
+
+### Example `.mdfm.toml`
+
+```toml
+# Default frontmatter format when creating new frontmatter on files without any.
+# Supported values: "yaml" (default), "toml"
+default_format = "yaml"
+
+# Output format for command results.
+# Supported values: "table" (default), "json", "plain"
+output = "table"
+
+# Default JSON Schema path for `mdfm check`.
+schema = ".mdfm-schema.json"
+
+# Glob patterns to exclude when walking directories (in addition to .gitignore).
+ignore = ["drafts/**", "CHANGELOG.md"]
+```
+
+---
+
+## Frontmatter Engine & Preservation Guarantees
+
+- **Zero-Copy Splitting (`src/frontmatter/mod.rs`):**
+  - Detects and strips leading UTF-8 BOM (`\u{FEFF}`) before parsing, re-emitting it on render.
+  - Detects document line ending (`LF` vs `CRLF`) from the first `\n` byte and normalizes rendered frontmatter lines to match.
+  - Recognizes YAML opening `---` (closing `---` or `...`) and TOML opening `+++` (closing `+++`).
+  - Treats unclosed `---` horizontal rules as body-only documents without frontmatter.
+  - Keeps `body: &'a str` as an untouched slice of the original input string; rendering concatenates BOM + delimiters + normalized frontmatter + verbatim `body`.
+- **YAML Handling (`src/frontmatter/yaml.rs`):** Parses into `serde_yaml_ng::Mapping`, supports nested dot-path get/set/del, empty/comment-only blocks parse cleanly as empty mappings.
+- **TOML Handling (`src/frontmatter/toml.rs`):** Parses into `toml_edit::DocumentMut` for lossless dot-path mutation across standard and inline tables.
+- **File Discovery (`src/commands/mod.rs`):** Collects `.md` and `.markdown` files deterministically (sorted paths), respecting `.gitignore` via `ignore::WalkBuilder` and config `ignore` globs.
+
+---
+
+## Development, Testing & Quality Gates
+
+### Taskfile Commands (`Taskfile.yml`)
+
+| Command | Description |
+| --- | --- |
+| `task check` | Run `cargo check` |
+| `task test` | Run `fmt:check`, `lint`, `cargo test`, and `clippy` |
+| `task test:ci` | Run full test suite using `[profile.ci]` |
+| `task fmt` / `task fmt:check` | Format / verify Rust formatting (`cargo fmt --all`) |
+| `task clippy` | Run `cargo clippy --workspace --all-targets --all-features -- -D warnings` |
+| `task lint:md` / `task fmt:md` | Lint / format Markdown via `rumdl` |
+| `task build:debug` / `task build:local` | Build debug or local release binary |
+| `task build` | Cross-compile `amd64`, `arm64`, `armv7`, `armv6` via `cross` |
+| `task coverage` / `task coverage:report` | Generate coverage summary or `lcov.info` via `cargo-llvm-cov` |
+| `task release` | Version bump, validate, tag, and push (`scripts/release.sh`) |
+| `task release:summary` | Generate categorized GitHub release notes (`scripts/release_summary.py`) |
+
+### Mandatory Quality Gates
+
+1. `task check` passes.
+2. `task fmt:check` passes.
+3. `task clippy` passes with zero warnings (`-D warnings`).
+4. `task test` passes all unit and integration tests (including cross-compilation child-binary preflight guard and CRLF preservation tests).
+5. `task lint:md` (`rumdl check .`) passes.
+
+### CI Matrix (`.github/workflows/ci.yml`)
+
+Runs on push/PR to `main`:
+- Tests on `ubuntu-latest` (`stable`, `beta`, `nightly`), `macos-latest` (`stable`), `windows-latest` (`stable`), and Linux ARM cross targets (`aarch64`, `armv7`, `armv6`).
+- Standalone `rustfmt`, `clippy`, `markdownlint` (`rumdl`), and `coveralls` (`cargo-llvm-cov`) jobs.
+
+---
+
+## License & Maintainer
+
+- **License:** [Apache License 2.0](LICENSE)
+- **Author / Maintainer:** [Nicholas Wilde](https://github.com/nicholaswilde)
+- **Repository:** <https://github.com/nicholaswilde/mdfm>
