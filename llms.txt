@@ -10,7 +10,7 @@
 - [docs/index.md](docs/index.md): Zensical documentation home page (`https://nicholaswilde.io/mdfm`).
 - [docs/about.md](docs/about.md): Feature overview and preservation guarantees.
 - [docs/installation.md](docs/installation.md): Homebrew, APT, Scoop, GitHub Releases, self-update, completions, and man page setup.
-- [docs/usage.md](docs/usage.md): Full CLI usage reference (`get`, `set`, `del`, `check`, `completions`, `man`, `update`).
+- [docs/usage.md](docs/usage.md): Full CLI usage reference (`get`, `set`, `del`, `mv`, `check`, `keys`, `values`, `fmt`, `completions`, `man`, `update`).
 - [docs/configuration.md](docs/configuration.md): Layered configuration precedence, TOML/YAML/JSON examples, and `MDFM_*` env vars.
 - [docs/security.md](docs/security.md): Data integrity guarantees, safe mutation practices, checksum verification, and vulnerability disclosure.
 - [AGENTS.md](AGENTS.md): Architecture, tech stack, conventions, and quality gates.
@@ -21,18 +21,20 @@
 
 - [src/main.rs](src/main.rs): Thin CLI binary entry point delegating to `mdfm::run()`.
 - [src/lib.rs](src/lib.rs): Library exports and command dispatch (`run`, `run_app`).
-- [src/cli.rs](src/cli.rs): `clap` CLI flags, subcommands (`get`, `set`, `del`, `check`, `completions`, `man`, `update`), and `generate_manpage`.
+- [src/cli.rs](src/cli.rs): `clap` CLI flags, subcommands (`get`, `set`, `del`, `mv`, `check`, `keys`, `values`, `fmt`, `completions`, `man`, `update`), and `generate_manpage`.
 - [src/config.rs](src/config.rs): Layered configuration precedence (CLI > `MDFM_*` env > `.mdfm.toml` > user global config > defaults).
 - [src/frontmatter/mod.rs](src/frontmatter/mod.rs): Zero-copy byte-offset frontmatter splitter, renderer, and `FrontmatterData` enum.
-- [src/frontmatter/yaml.rs](src/frontmatter/yaml.rs): YAML dot-path get/set/del helpers.
-- [src/frontmatter/toml.rs](src/frontmatter/toml.rs): Lossless TOML dot-path get/set/del helpers via `toml_edit`.
+- [src/frontmatter/yaml.rs](src/frontmatter/yaml.rs): YAML dot-path get/set/del, configurable sequence indentation, sorting, and TOML conversion helpers.
+- [src/frontmatter/toml.rs](src/frontmatter/toml.rs): Lossless TOML dot-path get/set/del, sorting, and YAML conversion helpers via `toml_edit`.
 - [src/frontmatter/filter.rs](src/frontmatter/filter.rs): `--where` expression parser and evaluator.
 - [src/commands/mod.rs](src/commands/mod.rs): `.gitignore`-aware file walker and table/JSON/plain formatters.
+- [src/commands/audit.rs](src/commands/audit.rs): `keys` and `values` taxonomy audit subcommand handlers.
 - [src/commands/get.rs](src/commands/get.rs): `get` subcommand handler.
 - [src/commands/set.rs](src/commands/set.rs): `set` subcommand handler (`--dry-run`, `--diff`, typed value parsing).
 - [src/commands/del.rs](src/commands/del.rs): `del` subcommand handler (`--dry-run`, `--diff`).
 - [src/commands/mv.rs](src/commands/mv.rs): `mv` / `rename` subcommand handler (`--merge`, `--overwrite`, `--dry-run`, `--diff`).
-- [src/commands/check.rs](src/commands/check.rs): `check` JSON Schema validation subcommand handler (`--errors-only`, `[[schemas]]`).
+- [src/commands/fmt.rs](src/commands/fmt.rs): `fmt` subcommand handler (`--check`, `--sort-keys`, `--sort-array`, `--to`, `--dry-run`, `--diff`).
+- [src/commands/check.rs](src/commands/check.rs): `check` syntax and JSON Schema validation subcommand handler (`--syntax-only`, `--errors-only`, `[[schemas]]`).
 - [src/commands/update.rs](src/commands/update.rs): `update` GitHub release self-updater (`--check`, `-y`/`--yes`, `--version`).
 
 ## Build & Automation

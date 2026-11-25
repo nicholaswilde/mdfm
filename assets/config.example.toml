@@ -34,7 +34,23 @@
 # CLI: --errors-only | -q | --quiet
 # errors_only = false
 
-# Per-glob JSON Schema mappings for `mdfm check` (evaluated in order; falls back to `schema`).
+# Indent YAML sequence items (`- `) under their parent key (shared by fmt, set, del, mv).
+# CLI (fmt): --indent-sequences <true|false>
+# indent_sequences = true
+
+# Number of spaces per YAML indentation level (must be >= 1; shared by fmt, set, del, mv).
+# CLI (fmt): --yaml-indent <spaces>
+# yaml_indent = 2
+
+# Recursively sort frontmatter keys alphabetically in `mdfm fmt`.
+# CLI (fmt): --sort-keys
+# sort_keys = false
+
+# Dot-path array keys to sort and deduplicate in `mdfm fmt`.
+# CLI (fmt): --sort-array <key>
+# sort_arrays = ["tags"]
+
+# Per-glob JSON Schemas for `mdfm check` (evaluated in order; falls back to `schema`).
 # Explicit CLI `--schema` or `MDFM_SCHEMA` overrides all `[[schemas]]` entries.
 # [[schemas]]
 # pattern = "docs/reference/**"

@@ -12,7 +12,10 @@ mdfm [OPTIONS] <COMMAND>
 | `set` | Update or insert frontmatter keys (creates frontmatter if absent) | `mdfm set draft=false posts/ --dry-run --diff` |
 | `del` | Delete one or more keys from frontmatter | `mdfm del draft author.bio posts/ --dry-run --diff` |
 | `mv` (`rename`) | Atomically rename or merge frontmatter keys across files | `mdfm mv --merge tag tags docs/` |
-| `check` | Validate frontmatter against a JSON Schema | `mdfm check --schema schema.json posts/` |
+| `check` | Validate frontmatter syntax and optionally against a JSON Schema | `mdfm check --schema schema.json posts/` |
+| `keys` | Audit frontmatter keys, file counts, and observed types across files | `mdfm keys docs/` |
+| `values` | Audit unique values and occurrence counts for a key across files | `mdfm values tags docs/` |
+| `fmt` | Format frontmatter (YAML sequence indent, key/array sorting, YAML/TOML conversion) | `mdfm fmt --sort-keys --sort-array tags docs/` |
 | `completions` | Generate shell completion script (`bash`, `zsh`, `fish`, `powershell`, `elvish`) | `mdfm completions zsh` |
 | `man` | Output UNIX roff man page | `mdfm man > assets/mdfm.1` |
 | `update` | Check for and install the latest `mdfm` release from GitHub | `mdfm update [--check] [-y] [--version <ver>]` |
@@ -203,9 +206,9 @@ mdfm --where 'not draft' check --schema publish-schema.json posts/
 !!! tip
     Bare key paths evaluate as falsy when missing, `null`, `false`, `0`, `""`, `[]`, or `{}`. Inequality (`!=`) evaluates to `true` when the referenced key is absent. Use `has_frontmatter` or `frontmatter_format` (`"yaml"`, `"toml"`, or `null`) to target files without frontmatter; quote `"has_frontmatter"` if querying a literal frontmatter key with that name.
 
-## :white_check_mark: Schema Validation (`check`)
+## :white_check_mark: Schema & Syntax Validation (`check`)
 
-Validate YAML and TOML frontmatter against any standard JSON Schema file (such as Draft 2020-12). `mdfm check` exits with a non-zero status code when any file fails validation, making it ready for CI pipelines and pre-commit hooks.
+Validate YAML and TOML frontmatter syntax and, when configured, validate against any standard JSON Schema file (such as Draft 2020-12). `mdfm check` exits with a non-zero status code when any file fails parsing or validation, making it ready for CI pipelines and pre-commit hooks.
 
 ```json title=".mdfm-schema.json"
 {
@@ -232,6 +235,12 @@ Validate YAML and TOML frontmatter against any standard JSON Schema file (such a
 ```
 
 ```bash
+# Syntax-only validation (automatic when no schema is configured)
+mdfm check docs/
+
+# Explicitly bypass any configured .mdfm.toml schema / [[schemas]] rules
+mdfm check --syntax-only cook/
+
 # Validate a directory with an explicit schema
 mdfm check --schema .mdfm-schema.json docs/
 
@@ -242,16 +251,70 @@ mdfm check -q docs/
 # Emit machine-readable validation failures only as JSON
 mdfm --output json check --errors-only --schema .mdfm-schema.json docs/
 
-# Rely on `schema = ".mdfm-schema.json"` in .mdfm.toml or MDFM_SCHEMA
+# Rely on `schema = ".mdfm-schema.json"` or `[[schemas]]` in .mdfm.toml or MDFM_SCHEMA
 mdfm check docs/
 ```
+
+When no `--schema`, `MDFM_SCHEMA`, `schema`, or `[[schemas]]` is configured — or when `--syntax-only` is passed — `mdfm check` validates YAML/TOML frontmatter parseability without requiring a JSON Schema. Body-only files pass syntax-only checks, while malformed YAML/TOML blocks (such as unquoted emoji shortcodes like `title: :cake: Pumpkin Cake`) are reported as validation failures.
 
 When `--errors-only` (or `-q` / `--quiet`, or `errors_only = true` in `.mdfm.toml`) is enabled:
 
 - **`table` / `plain`:** Passing files are omitted and a compact summary line (`<ok> ok, <failed> failed`) is printed. When all files pass, only the summary line is emitted.
 - **`json`:** Only failing entries are included in the output JSON array (`[]` when all files pass).
 
-Files without frontmatter are validated as an empty JSON object (`{}`) unless filtered out by `--where`. Malformed YAML or TOML frontmatter is reported as a validation failure for that file.
+When a JSON Schema is active, files without frontmatter are validated as an empty JSON object (`{}`) unless filtered out by `--where`. Malformed YAML or TOML frontmatter is reported as a validation failure for that file.
+
+## :clipboard: Taxonomy Audits (`keys` & `values`)
+
+Inspect frontmatter key usage, type drift, and value frequencies across a repository without external scripts:
+
+```bash
+# List every frontmatter key (including nested dot-paths), file count, and observed JSON types
+mdfm keys docs/
+mdfm keys --sort alpha docs/
+mdfm --output json keys docs/
+
+# List unique values and occurrence counts for a key (flattens arrays by default)
+mdfm values tags docs/
+mdfm values tags --sort alpha docs/
+
+# Keep array values intact instead of flattening elements
+mdfm values tags --no-flatten docs/
+
+# Audit only matching files with --where
+mdfm --where 'draft == false' values author.role docs/
+```
+
+- **Key audit (`keys`):** Walks nested objects recursively (reporting both parent objects and dot-path leaf keys) and aggregates observed JSON types (`string`, `number`, `boolean`, `array`, `object`, `null`) to highlight typos (e.g. `tag` vs `tags`) and type drift (e.g. `array, string`).
+- **Value audit (`values <KEY>`):** Flattens array values into individual element counts by default (`--no-flatten` counts whole arrays), supports nested dot paths, `--where` filtering, `--sort <count|alpha>` (default: `count` descending), and `--output <table|json|plain|files>`.
+
+## :sparkles: Formatting Frontmatter (`fmt`)
+
+Normalize frontmatter style (YAML sequence indentation, recursive key sorting, array sorting/deduplication, and YAML <-> TOML conversion) without modifying Markdown bodies, UTF-8 BOM, or line endings:
+
+```bash
+# Format frontmatter in-place (defaults to 2-space indented YAML sequences)
+mdfm fmt docs/
+
+# CI check mode: exit non-zero if any file needs formatting (combine with --diff for preview)
+mdfm fmt --check docs/
+mdfm fmt --check --diff docs/
+
+# Sort keys alphabetically and sort + deduplicate specific arrays
+mdfm fmt --sort-keys --sort-array tags docs/
+mdfm fmt --sort-array tags,categories --dry-run --diff docs/
+
+# Customize YAML indentation width or disable sequence indentation
+mdfm fmt --yaml-indent 4 docs/
+mdfm fmt --indent-sequences false docs/
+
+# Convert frontmatter between YAML (---) and TOML (+++)
+mdfm fmt --to toml docs/
+mdfm fmt --to yaml docs/
+```
+
+- **Shared YAML indentation:** `indent_sequences` (default: `true`) and `yaml_indent` (default: `2`) configured in `.mdfm.toml` are shared across `fmt`, `set`, `del`, and `mv`, keeping `yamllint` / Prettier 2-space sequence indentation (`tags:\n  - item`) intact on every edit.
+- **Safety:** Body-only files are skipped. Converting YAML containing `null` values to TOML fails cleanly with an error rather than dropping data.
 
 ## :bar_chart: Output Formats
 

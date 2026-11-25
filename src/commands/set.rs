@@ -205,7 +205,7 @@ pub fn execute(
         };
 
         let (changed, rendered_opt) = if semantically_changed {
-            let rendered = doc.render(Some(&fm))?;
+            let rendered = doc.render_with_options(Some(&fm), config.yaml_format_options())?;
             let bytes_changed = rendered != original;
             if bytes_changed && !dry_run {
                 fs::write(&path, &rendered)
@@ -703,7 +703,7 @@ tags:
         assert_eq!(parsed[0]["changed"], json!(true));
         assert_eq!(parsed[0]["created_frontmatter"], json!(true));
         let plain_updated = fs::read_to_string(&plain_file).unwrap();
-        assert!(plain_updated.starts_with("---\ntags:\n- must-try\n---\n\n# Body Only\n"));
+        assert!(plain_updated.starts_with("---\ntags:\n  - must-try\n---\n\n# Body Only\n"));
 
         // Non-array key returns error on += and -=.
         let mut err_out = Vec::new();

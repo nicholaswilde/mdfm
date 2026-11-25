@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::cli::OutputFormat;
-use crate::frontmatter::Format;
+use crate::frontmatter::{Format, YamlFormatOptions};
 
 /// Supported configuration file formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,6 +82,10 @@ pub struct ConfigFile {
     pub ignore: Option<Vec<String>>,
     pub extensions: Option<Vec<String>>,
     pub errors_only: Option<bool>,
+    pub indent_sequences: Option<bool>,
+    pub yaml_indent: Option<usize>,
+    pub sort_keys: Option<bool>,
+    pub sort_arrays: Option<Vec<String>>,
 }
 
 impl ConfigFile {
@@ -192,6 +196,20 @@ pub struct ResolvedConfig {
     pub ignore: Vec<String>,
     pub extensions: Vec<String>,
     pub errors_only: bool,
+    pub indent_sequences: bool,
+    pub yaml_indent: usize,
+    pub sort_keys: bool,
+    pub sort_arrays: Vec<String>,
+}
+
+impl ResolvedConfig {
+    /// Build YAML serialization options from resolved formatting configuration.
+    pub fn yaml_format_options(&self) -> YamlFormatOptions {
+        YamlFormatOptions {
+            indent_sequences: self.indent_sequences,
+            yaml_indent: self.yaml_indent,
+        }
+    }
 }
 
 impl Default for ResolvedConfig {
@@ -204,6 +222,10 @@ impl Default for ResolvedConfig {
             ignore: Vec::new(),
             extensions: default_extensions(),
             errors_only: false,
+            indent_sequences: true,
+            yaml_indent: 2,
+            sort_keys: false,
+            sort_arrays: Vec::new(),
         }
     }
 }
@@ -217,6 +239,8 @@ pub struct CliOverrides<'a> {
     pub schema: Option<&'a Path>,
     pub extensions: Option<&'a [String]>,
     pub errors_only: Option<bool>,
+    pub indent_sequences: Option<bool>,
+    pub yaml_indent: Option<usize>,
 }
 
 fn parse_format_env(raw: &str) -> Result<Format> {
@@ -452,6 +476,37 @@ pub fn resolve_configuration_from_dir(
         .or_else(|| global_cfg.as_ref().and_then(|(_, c)| c.errors_only))
         .unwrap_or(false);
 
+    // 7. indent_sequences: CLI > local > global > true
+    let indent_sequences = overrides
+        .indent_sequences
+        .or_else(|| local_cfg.as_ref().and_then(|(_, c)| c.indent_sequences))
+        .or_else(|| global_cfg.as_ref().and_then(|(_, c)| c.indent_sequences))
+        .unwrap_or(true);
+
+    // 8. yaml_indent: CLI > local > global > 2 (must be >= 1)
+    let yaml_indent = overrides
+        .yaml_indent
+        .or_else(|| local_cfg.as_ref().and_then(|(_, c)| c.yaml_indent))
+        .or_else(|| global_cfg.as_ref().and_then(|(_, c)| c.yaml_indent))
+        .unwrap_or(2);
+    if yaml_indent == 0 {
+        anyhow::bail!("Configured yaml_indent must be at least 1");
+    }
+
+    // 9. sort_keys: local > global > false
+    let sort_keys = local_cfg
+        .as_ref()
+        .and_then(|(_, c)| c.sort_keys)
+        .or_else(|| global_cfg.as_ref().and_then(|(_, c)| c.sort_keys))
+        .unwrap_or(false);
+
+    // 10. sort_arrays: local > global > []
+    let sort_arrays = local_cfg
+        .as_ref()
+        .and_then(|(_, c)| c.sort_arrays.clone())
+        .or_else(|| global_cfg.as_ref().and_then(|(_, c)| c.sort_arrays.clone()))
+        .unwrap_or_default();
+
     Ok(ResolvedConfig {
         default_format,
         output,
@@ -460,6 +515,10 @@ pub fn resolve_configuration_from_dir(
         ignore,
         extensions,
         errors_only,
+        indent_sequences,
+        yaml_indent,
+        sort_keys,
+        sort_arrays,
     })
 }
 
@@ -671,6 +730,8 @@ errors_only = true
                 schema: Some(Path::new("override.json")),
                 extensions: Some(&cli_exts),
                 errors_only: Some(false),
+                indent_sequences: Some(false),
+                yaml_indent: Some(4),
             },
         )
         .unwrap();
@@ -679,6 +740,47 @@ errors_only = true
         assert_eq!(resolved_cli.schema, Some(PathBuf::from("override.json")));
         assert_eq!(resolved_cli.extensions, vec!["mdx"]);
         assert!(!resolved_cli.errors_only);
+        assert!(!resolved_cli.indent_sequences);
+        assert_eq!(resolved_cli.yaml_indent, 4);
+
+        // Zero yaml_indent fails validation.
+        let bad_indent_cfg = dir.path().join("bad_indent.toml");
+        fs::write(&bad_indent_cfg, "yaml_indent = 0\n").unwrap();
+        assert!(resolve_configuration_from_dir(
+            dir.path(),
+            &CliOverrides {
+                config_path: Some(&bad_indent_cfg),
+                ..CliOverrides::default()
+            }
+        )
+        .is_err());
+
+        // Formatting options load cleanly from config file.
+        let fmt_cfg = dir.path().join("fmt.toml");
+        fs::write(
+            &fmt_cfg,
+            "indent_sequences = false\nyaml_indent = 4\nsort_keys = true\nsort_arrays = [\"tags\", \"categories\"]\n",
+        )
+        .unwrap();
+        let resolved_fmt = resolve_configuration_from_dir(
+            dir.path(),
+            &CliOverrides {
+                config_path: Some(&fmt_cfg),
+                ..CliOverrides::default()
+            },
+        )
+        .unwrap();
+        assert!(!resolved_fmt.indent_sequences);
+        assert_eq!(resolved_fmt.yaml_indent, 4);
+        assert!(resolved_fmt.sort_keys);
+        assert_eq!(resolved_fmt.sort_arrays, vec!["tags", "categories"]);
+        assert_eq!(
+            resolved_fmt.yaml_format_options(),
+            YamlFormatOptions {
+                indent_sequences: false,
+                yaml_indent: 4,
+            }
+        );
 
         // Empty configured extensions list fails validation.
         let bad_ext_cfg = dir.path().join("bad_ext.toml");

@@ -4,7 +4,10 @@ pub mod yaml;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::cmp::Ordering;
 use thiserror::Error;
+
+pub use yaml::YamlFormatOptions;
 
 /// Supported frontmatter serialization formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, clap::ValueEnum)]
@@ -212,10 +215,95 @@ impl FrontmatterData {
 
     /// Serialize frontmatter back to its native text representation (without delimiters).
     pub fn serialize(&self) -> Result<String, FrontmatterError> {
+        self.serialize_with_options(YamlFormatOptions::default())
+    }
+
+    /// Serialize frontmatter using explicit YAML formatting options.
+    pub fn serialize_with_options(
+        &self,
+        yaml_opts: YamlFormatOptions,
+    ) -> Result<String, FrontmatterError> {
         match self {
-            Self::Yaml(mapping) => yaml::serialize_yaml(mapping),
+            Self::Yaml(mapping) => yaml::serialize_yaml_with_options(mapping, yaml_opts),
             Self::Toml(doc) => Ok(toml::serialize_toml(doc)),
         }
+    }
+
+    /// Recursively sort all mapping/table keys alphabetically.
+    pub fn sort_keys(&mut self) {
+        match self {
+            Self::Yaml(mapping) => yaml::sort_keys(mapping),
+            Self::Toml(doc) => toml::sort_keys(doc),
+        }
+    }
+
+    /// Sort and deduplicate an array at a dot-separated key path.
+    /// Returns `true` if the array changed.
+    pub fn sort_array(&mut self, path: &str) -> Result<bool, FrontmatterError> {
+        match self {
+            Self::Yaml(mapping) => yaml::sort_array(mapping, path),
+            Self::Toml(doc) => toml::sort_array(doc, path),
+        }
+    }
+
+    /// Convert frontmatter data into the requested target format (`yaml` or `toml`).
+    pub fn convert_to(self, target: Format) -> Result<Self, FrontmatterError> {
+        match (self, target) {
+            (Self::Yaml(m), Format::Yaml) => Ok(Self::Yaml(m)),
+            (Self::Toml(d), Format::Toml) => Ok(Self::Toml(d)),
+            (Self::Yaml(m), Format::Toml) => Ok(Self::Toml(toml::from_yaml(&m)?)),
+            (Self::Toml(d), Format::Yaml) => Ok(Self::Yaml(yaml::from_toml(&d))),
+        }
+    }
+}
+
+fn json_type_rank(v: &JsonValue) -> u8 {
+    match v {
+        JsonValue::Null => 0,
+        JsonValue::Bool(_) => 1,
+        JsonValue::Number(_) => 2,
+        JsonValue::String(_) => 3,
+        JsonValue::Array(_) => 4,
+        JsonValue::Object(_) => 5,
+    }
+}
+
+/// Deterministic total ordering over `serde_json::Value` for array sorting.
+pub(crate) fn compare_json_values(a: &JsonValue, b: &JsonValue) -> Ordering {
+    let rank_cmp = json_type_rank(a).cmp(&json_type_rank(b));
+    if rank_cmp != Ordering::Equal {
+        return rank_cmp;
+    }
+    match (a, b) {
+        (JsonValue::Null, JsonValue::Null) => Ordering::Equal,
+        (JsonValue::Bool(x), JsonValue::Bool(y)) => x.cmp(y),
+        (JsonValue::Number(x), JsonValue::Number(y)) => {
+            if let (Some(xi), Some(yi)) = (x.as_i64(), y.as_i64()) {
+                xi.cmp(&yi)
+            } else if let (Some(xu), Some(yu)) = (x.as_u64(), y.as_u64()) {
+                xu.cmp(&yu)
+            } else {
+                let xf = x.as_f64().unwrap_or(0.0);
+                let yf = y.as_f64().unwrap_or(0.0);
+                xf.total_cmp(&yf)
+            }
+        }
+        (JsonValue::String(x), JsonValue::String(y)) => x.cmp(y),
+        (JsonValue::Array(xs), JsonValue::Array(ys)) => {
+            for (x, y) in xs.iter().zip(ys.iter()) {
+                let ord = compare_json_values(x, y);
+                if ord != Ordering::Equal {
+                    return ord;
+                }
+            }
+            xs.len().cmp(&ys.len())
+        }
+        (JsonValue::Object(_), JsonValue::Object(_)) => {
+            let sa = serde_json::to_string(a).unwrap_or_default();
+            let sb = serde_json::to_string(b).unwrap_or_default();
+            sa.cmp(&sb)
+        }
+        _ => Ordering::Equal,
     }
 }
 
@@ -375,6 +463,15 @@ impl<'a> SplitDocument<'a> {
     /// Render the document back to a `String`, preserving UTF-8 BOM, line endings,
     /// closing delimiter style, trailing newline presence, and the verbatim `body` slice.
     pub fn render(&self, data: Option<&FrontmatterData>) -> Result<String, FrontmatterError> {
+        self.render_with_options(data, YamlFormatOptions::default())
+    }
+
+    /// Render the document back to a `String` using explicit YAML formatting options.
+    pub fn render_with_options(
+        &self,
+        data: Option<&FrontmatterData>,
+        yaml_opts: YamlFormatOptions,
+    ) -> Result<String, FrontmatterError> {
         let mut out = String::with_capacity(self.body.len() + 128);
 
         if self.has_bom {
@@ -399,7 +496,7 @@ impl<'a> SplitDocument<'a> {
                 None => (ClosingDelimiter::default_for(fm.format()).as_str(), true),
             };
 
-            let serialized = fm.serialize()?;
+            let serialized = fm.serialize_with_options(yaml_opts)?;
             let normalized = normalize_frontmatter_lines(&serialized, self.line_ending);
 
             out.push_str(open_delim);

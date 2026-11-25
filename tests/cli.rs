@@ -589,8 +589,8 @@ fn cli_env_vars_global_config_completions_and_table_outputs() {
     cmd.args(["check"])
         .arg(&toml_file)
         .assert()
-        .failure()
-        .stderr(predicate::str::contains("No JSON Schema specified"));
+        .success()
+        .stdout(predicate::str::contains("ok"));
 
     let Some(mut cmd) = mdfm_cmd() else { return };
     cmd.args(["get", "title"])
@@ -1591,4 +1591,223 @@ schema = ".mdfm-cook-schema.json"
         .assert()
         .failure()
         .stdout(predicate::str::contains("temps.md"));
+}
+
+#[test]
+fn cli_check_syntax_only_without_schema_and_bypassing_configured_schema() {
+    let tmp = tempfile::tempdir().unwrap();
+    let valid_yaml = tmp.path().join("valid_yaml.md");
+    let valid_toml = tmp.path().join("valid_toml.md");
+    let body_only = tmp.path().join("plain.md");
+    let broken_yaml = tmp.path().join("broken_yaml.md");
+
+    fs::write(&valid_yaml, "---\ntitle: \"Cake\"\n---\nBody\n").unwrap();
+    fs::write(&valid_toml, "+++\ntitle = \"Pie\"\n+++\nBody\n").unwrap();
+    fs::write(&body_only, "# Plain Markdown\n").unwrap();
+    fs::write(&broken_yaml, "---\ntitle: :cake: Pumpkin Cake\n---\nBody\n").unwrap();
+
+    // No .mdfm.toml schema configured: automatic syntax-only succeeds on valid files.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args(["check", "-q", "valid_yaml.md", "valid_toml.md", "plain.md"])
+        .assert()
+        .success()
+        .stdout(predicate::str::diff("3 ok, 0 failed\n"));
+
+    // Malformed YAML frontmatter fails in automatic syntax-only mode.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args(["check", "-q", "."])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("broken_yaml.md"))
+        .stdout(predicate::str::contains("3 ok, 1 failed"));
+
+    // With a strict .mdfm.toml schema, `--syntax-only` explicitly bypasses schema validation.
+    fs::write(
+        tmp.path().join("strict.json"),
+        r#"{"type":"object","required":["missing_required_field"]}"#,
+    )
+    .unwrap();
+    fs::write(tmp.path().join(".mdfm.toml"), "schema = \"strict.json\"\n").unwrap();
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args(["check", "--syntax-only", "-q", "valid_yaml.md", "plain.md"])
+        .assert()
+        .success()
+        .stdout(predicate::str::diff("2 ok, 0 failed\n"));
+}
+
+#[test]
+fn cli_keys_and_values_audit_subcommands() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(
+        tmp.path().join("a.md"),
+        "---\ntitle: One\ndraft: false\ntags:\n  - rust\n  - side\nauthor:\n  name: Alice\n---\nBody\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("b.md"),
+        "---\ntitle: Two\ndraft: false\ntags:\n  - rust\n  - sides\nauthor:\n  name: Bob\n---\nBody\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("c.md"),
+        "+++\ntitle = \"Three\"\ndraft = true\ntags = \"rust,cli\"\ntag = \"typo\"\n+++\nBody\n",
+    )
+    .unwrap();
+
+    // `mdfm --output json keys .` reports file counts, nested keys, and mixed types.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .current_dir(tmp.path())
+        .args(["--output", "json", "keys", "."])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let keys_json: Vec<serde_json::Value> = serde_json::from_slice(&out).unwrap();
+    let tags = keys_json.iter().find(|e| e["key"] == "tags").unwrap();
+    assert_eq!(tags["count"], serde_json::json!(3));
+    assert_eq!(tags["types"], serde_json::json!(["array", "string"]));
+    let author_name = keys_json
+        .iter()
+        .find(|e| e["key"] == "author.name")
+        .unwrap();
+    assert_eq!(author_name["count"], serde_json::json!(2));
+
+    // `mdfm values tags .` flattens arrays by default and supports `--where` + `--sort alpha`.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args([
+            "--where",
+            "draft == false",
+            "--output",
+            "plain",
+            "values",
+            "tags",
+            "--sort",
+            "alpha",
+            ".",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::diff("rust\t2\nside\t1\nsides\t1\n"));
+
+    // `--no-flatten` preserves array values intact.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .current_dir(tmp.path())
+        .args([
+            "--where",
+            "draft == false",
+            "--output",
+            "json",
+            "values",
+            "tags",
+            "--no-flatten",
+            ".",
+        ])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let vals_json: Vec<serde_json::Value> = serde_json::from_slice(&out).unwrap();
+    assert_eq!(vals_json.len(), 2);
+    assert!(vals_json.iter().all(|v| v["value"].is_array()));
+}
+
+#[test]
+fn cli_fmt_subcommand_yaml_indent_sort_convert_and_shared_set_del_indent() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("recipe.md");
+    fs::write(
+        &file,
+        "---\nz_title: Cake\ntags:\n- dessert\n- baking\n- dessert\n---\n\n# Cake Body\n",
+    )
+    .unwrap();
+
+    // `mdfm fmt --check` exits non-zero when YAML sequences lack 2-space indent.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args(["fmt", "--check", "--diff", "recipe.md"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("-- dessert"))
+        .stdout(predicate::str::contains("+  - dessert"));
+
+    // `mdfm fmt --sort-keys --sort-array tags` normalizes indentation, key order, and dedups tags.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args(["fmt", "--sort-keys", "--sort-array", "tags", "recipe.md"])
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        "---\ntags:\n  - baking\n  - dessert\nz_title: Cake\n---\n\n# Cake Body\n"
+    );
+
+    // Re-running `mdfm fmt --check --sort-keys --sort-array tags` exits 0.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args([
+            "fmt",
+            "--check",
+            "--sort-keys",
+            "--sort-array",
+            "tags",
+            "recipe.md",
+        ])
+        .assert()
+        .success();
+
+    // `mdfm set` and `mdfm del` respect `.mdfm.toml` `indent_sequences` / `yaml_indent`.
+    fs::write(
+        tmp.path().join(".mdfm.toml"),
+        "indent_sequences = true\nyaml_indent = 4\n",
+    )
+    .unwrap();
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args(["set", "tags+=featured", "recipe.md"])
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        "---\ntags:\n    - baking\n    - dessert\n    - featured\nz_title: Cake\n---\n\n# Cake Body\n"
+    );
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args(["del", "z_title", "recipe.md"])
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        "---\ntags:\n    - baking\n    - dessert\n    - featured\n---\n\n# Cake Body\n"
+    );
+
+    // `mdfm fmt --to toml` and back `--to yaml` preserve body verbatim.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args(["fmt", "--to", "toml", "recipe.md"])
+        .assert()
+        .success();
+    let toml_content = fs::read_to_string(&file).unwrap();
+    assert!(toml_content.starts_with("+++\n"));
+    assert!(toml_content.contains("tags = [\"baking\", \"dessert\", \"featured\"]"));
+    assert!(toml_content.ends_with("+++\n\n# Cake Body\n"));
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args(["fmt", "--to", "yaml", "--yaml-indent", "2", "recipe.md"])
+        .assert()
+        .success();
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        "---\ntags:\n  - baking\n  - dessert\n  - featured\n---\n\n# Cake Body\n"
+    );
 }

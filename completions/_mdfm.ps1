@@ -38,7 +38,10 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
             [CompletionResult]::new('del', 'del', [CompletionResultType]::ParameterValue, 'Delete one or more keys from frontmatter')
             [CompletionResult]::new('mv', 'mv', [CompletionResultType]::ParameterValue, 'Rename or merge a frontmatter key across files')
             [CompletionResult]::new('rename', 'rename', [CompletionResultType]::ParameterValue, 'Rename or merge a frontmatter key across files')
-            [CompletionResult]::new('check', 'check', [CompletionResultType]::ParameterValue, 'Validate frontmatter against a JSON Schema')
+            [CompletionResult]::new('check', 'check', [CompletionResultType]::ParameterValue, 'Validate frontmatter syntax and optionally against a JSON Schema')
+            [CompletionResult]::new('keys', 'keys', [CompletionResultType]::ParameterValue, 'Audit frontmatter keys, file counts, and observed types across files')
+            [CompletionResult]::new('values', 'values', [CompletionResultType]::ParameterValue, 'Audit unique values and occurrence counts for a frontmatter key across files')
+            [CompletionResult]::new('fmt', 'fmt', [CompletionResultType]::ParameterValue, 'Format and normalize frontmatter style (indentation, key/array sorting, YAML/TOML conversion)')
             [CompletionResult]::new('completions', 'completions', [CompletionResultType]::ParameterValue, 'Generate shell completion scripts (bash, zsh, fish, powershell, elvish)')
             [CompletionResult]::new('man', 'man', [CompletionResultType]::ParameterValue, 'Generate UNIX roff man page')
             [CompletionResult]::new('update', 'update', [CompletionResultType]::ParameterValue, 'Check for and install the latest mdfm release from GitHub')
@@ -135,6 +138,57 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
             [CompletionResult]::new('-q', '-q', [CompletionResultType]::ParameterName, 'Show only validation failures and a compact summary line')
             [CompletionResult]::new('--errors-only', '--errors-only', [CompletionResultType]::ParameterName, 'Show only validation failures and a compact summary line')
             [CompletionResult]::new('--quiet', '--quiet', [CompletionResultType]::ParameterName, 'Show only validation failures and a compact summary line')
+            [CompletionResult]::new('--syntax-only', '--syntax-only', [CompletionResultType]::ParameterName, 'Validate YAML/TOML frontmatter syntax only (bypasses any configured JSON Schema)')
+            [CompletionResult]::new('-l', '-l', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
+            [CompletionResult]::new('--files-only', '--files-only', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'mdfm;keys' {
+            [CompletionResult]::new('--sort', '--sort', [CompletionResultType]::ParameterName, 'Sort order for keys (count descending or alphabetical)')
+            [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Frontmatter format used when creating new frontmatter (yaml or toml)')
+            [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'Output presentation format (table, json, plain, or files)')
+            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''not has_frontmatter'', ''frontmatter_format == "toml"'', ''`prep time` != null'')')
+            [CompletionResult]::new('-C', '-C ', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
+            [CompletionResult]::new('--ext', '--ext', [CompletionResultType]::ParameterName, 'File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)')
+            [CompletionResult]::new('-l', '-l', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
+            [CompletionResult]::new('--files-only', '--files-only', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help (see more with ''--help'')')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help (see more with ''--help'')')
+            break
+        }
+        'mdfm;values' {
+            [CompletionResult]::new('--sort', '--sort', [CompletionResultType]::ParameterName, 'Sort order for values (count descending or alphabetical)')
+            [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Frontmatter format used when creating new frontmatter (yaml or toml)')
+            [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'Output presentation format (table, json, plain, or files)')
+            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''not has_frontmatter'', ''frontmatter_format == "toml"'', ''`prep time` != null'')')
+            [CompletionResult]::new('-C', '-C ', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
+            [CompletionResult]::new('--ext', '--ext', [CompletionResultType]::ParameterName, 'File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)')
+            [CompletionResult]::new('--no-flatten', '--no-flatten', [CompletionResultType]::ParameterName, 'Do not flatten array values into individual elements')
+            [CompletionResult]::new('-l', '-l', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
+            [CompletionResult]::new('--files-only', '--files-only', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help (see more with ''--help'')')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help (see more with ''--help'')')
+            break
+        }
+        'mdfm;fmt' {
+            [CompletionResult]::new('--sort-array', '--sort-array', [CompletionResultType]::ParameterName, 'Sort and deduplicate array values at the given key path(s) (repeatable or comma-separated)')
+            [CompletionResult]::new('--to', '--to', [CompletionResultType]::ParameterName, 'Convert frontmatter to the target format (yaml or toml)')
+            [CompletionResult]::new('--indent-sequences', '--indent-sequences', [CompletionResultType]::ParameterName, 'Indent YAML sequence items under their parent key (true or false)')
+            [CompletionResult]::new('--yaml-indent', '--yaml-indent', [CompletionResultType]::ParameterName, 'Number of spaces per YAML indentation level (default: 2)')
+            [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Frontmatter format used when creating new frontmatter (yaml or toml)')
+            [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'Output presentation format (table, json, plain, or files)')
+            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''not has_frontmatter'', ''frontmatter_format == "toml"'', ''`prep time` != null'')')
+            [CompletionResult]::new('-C', '-C ', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
+            [CompletionResult]::new('--ext', '--ext', [CompletionResultType]::ParameterName, 'File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)')
+            [CompletionResult]::new('--check', '--check', [CompletionResultType]::ParameterName, 'Check formatting without modifying files; exit non-zero if any file needs formatting')
+            [CompletionResult]::new('--sort-keys', '--sort-keys', [CompletionResultType]::ParameterName, 'Sort frontmatter keys alphabetically (recursively)')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Preview changes without writing files to disk')
+            [CompletionResult]::new('--diff', '--diff', [CompletionResultType]::ParameterName, 'Show unified diff of frontmatter formatting changes')
             [CompletionResult]::new('-l', '-l', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
             [CompletionResult]::new('--files-only', '--files-only', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
@@ -189,7 +243,10 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
             [CompletionResult]::new('set', 'set', [CompletionResultType]::ParameterValue, 'Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)')
             [CompletionResult]::new('del', 'del', [CompletionResultType]::ParameterValue, 'Delete one or more keys from frontmatter')
             [CompletionResult]::new('mv', 'mv', [CompletionResultType]::ParameterValue, 'Rename or merge a frontmatter key across files')
-            [CompletionResult]::new('check', 'check', [CompletionResultType]::ParameterValue, 'Validate frontmatter against a JSON Schema')
+            [CompletionResult]::new('check', 'check', [CompletionResultType]::ParameterValue, 'Validate frontmatter syntax and optionally against a JSON Schema')
+            [CompletionResult]::new('keys', 'keys', [CompletionResultType]::ParameterValue, 'Audit frontmatter keys, file counts, and observed types across files')
+            [CompletionResult]::new('values', 'values', [CompletionResultType]::ParameterValue, 'Audit unique values and occurrence counts for a frontmatter key across files')
+            [CompletionResult]::new('fmt', 'fmt', [CompletionResultType]::ParameterValue, 'Format and normalize frontmatter style (indentation, key/array sorting, YAML/TOML conversion)')
             [CompletionResult]::new('completions', 'completions', [CompletionResultType]::ParameterValue, 'Generate shell completion scripts (bash, zsh, fish, powershell, elvish)')
             [CompletionResult]::new('man', 'man', [CompletionResultType]::ParameterValue, 'Generate UNIX roff man page')
             [CompletionResult]::new('update', 'update', [CompletionResultType]::ParameterValue, 'Check for and install the latest mdfm release from GitHub')
@@ -209,6 +266,15 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
             break
         }
         'mdfm;help;check' {
+            break
+        }
+        'mdfm;help;keys' {
+            break
+        }
+        'mdfm;help;values' {
+            break
+        }
+        'mdfm;help;fmt' {
             break
         }
         'mdfm;help;completions' {

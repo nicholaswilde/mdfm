@@ -17,11 +17,11 @@ cp assets/config.example.toml ~/.config/mdfm/config.toml
 
 Settings resolve in strict hierarchical precedence order (highest to lowest):
 
-1. **Command Line Flags** (`--format`, `--output`, `-l` / `--files-only`, `--schema`, `--ext`, `--errors-only` / `-q` / `--quiet`, `-C` / `--config`)
+1. **Command Line Flags** (`--format`, `--output`, `-l` / `--files-only`, `--schema`, `--ext`, `--errors-only` / `-q` / `--quiet`, `--indent-sequences`, `--yaml-indent`, `-C` / `--config`)
 2. **Environment Variables** (`MDFM_FORMAT`, `MDFM_OUTPUT`, `MDFM_SCHEMA`, `MDFM_CONFIG`)
 3. **Project-Local Configuration** (`.mdfm.toml`, discovered by walking upward from the current working directory — or explicit `-C` / `--config` / `MDFM_CONFIG`)
 4. **User Global Configuration** (`$XDG_CONFIG_HOME/mdfm/config.{toml,yaml,yml,json}`, `~/.config/mdfm/config.{toml,yaml,yml,json}`, or `%APPDATA%\mdfm\config.*` / `%USERPROFILE%\.config\mdfm\config.*` on Windows)
-5. **Built-In Defaults** (`default_format = "yaml"`, `output = "table"`, `schema = None`, `ignore = []`, `extensions = ["md", "markdown"]`, `errors_only = false`)
+5. **Built-In Defaults** (`default_format = "yaml"`, `output = "table"`, `schema = None`, `ignore = []`, `extensions = ["md", "markdown"]`, `errors_only = false`, `indent_sequences = true`, `yaml_indent = 2`, `sort_keys = false`, `sort_arrays = []`)
 
 !!! note
     Passing `-C` / `--config <path>` or setting `MDFM_CONFIG` loads only that explicit file (failing immediately if the path does not exist or is not a regular file) and skips automatic local/global discovery.
@@ -56,6 +56,16 @@ A ready-to-use template is available at [`assets/config.example.toml`](https://g
 
     # Suppress passing rows in `mdfm check` and print a compact summary line
     errors_only = false
+
+    # Indent YAML sequence items under their parent key (default: true; shared by fmt/set/del/mv)
+    indent_sequences = true
+
+    # Spaces per YAML indentation level (default: 2; must be >= 1)
+    yaml_indent = 2
+
+    # Default `mdfm fmt` key sorting and array sorting/deduplication
+    sort_keys = false
+    sort_arrays = ["tags"]
 
     # Per-glob JSON Schemas (first matching pattern wins; unmatched files fall back to `schema`)
     [[schemas]]
@@ -112,6 +122,10 @@ A ready-to-use template is available at [`assets/config.example.toml`](https://g
 | `ignore` | Array of Strings | `[]` | Glob patterns | Additional file/directory globs excluded during directory traversal |
 | `extensions` | Array of Strings | `["md", "markdown"]` | File extensions | File extensions matched during directory walks (case-insensitive, leading `.` optional) |
 | `errors_only` | Boolean | `false` | `true`, `false` | Hide passing files in `mdfm check` and print a compact summary (`<ok> ok, <failed> failed`) |
+| `indent_sequences` | Boolean | `true` | `true`, `false` | Indent YAML sequence items (`- `) under their parent key (shared by `fmt`, `set`, `del`, `mv`) |
+| `yaml_indent` | Integer | `2` | `>= 1` | Spaces per YAML indentation level (shared by `fmt`, `set`, `del`, `mv`) |
+| `sort_keys` | Boolean | `false` | `true`, `false` | Recursively sort frontmatter keys alphabetically during `mdfm fmt` |
+| `sort_arrays` | Array of Strings | `[]` | Dot-path keys | Array key paths sorted and deduplicated during `mdfm fmt` |
 
 ## :earth_americas: Environment Variables Reference
 

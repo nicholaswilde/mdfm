@@ -1,5 +1,7 @@
+pub mod audit;
 pub mod check;
 pub mod del;
+pub mod fmt;
 pub mod get;
 pub mod mv;
 pub mod set;

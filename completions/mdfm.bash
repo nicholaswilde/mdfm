@@ -25,11 +25,17 @@ _mdfm() {
             mdfm,del)
                 cmd="mdfm__subcmd__del"
                 ;;
+            mdfm,fmt)
+                cmd="mdfm__subcmd__fmt"
+                ;;
             mdfm,get)
                 cmd="mdfm__subcmd__get"
                 ;;
             mdfm,help)
                 cmd="mdfm__subcmd__help"
+                ;;
+            mdfm,keys)
+                cmd="mdfm__subcmd__keys"
                 ;;
             mdfm,man)
                 cmd="mdfm__subcmd__man"
@@ -46,6 +52,9 @@ _mdfm() {
             mdfm,update)
                 cmd="mdfm__subcmd__update"
                 ;;
+            mdfm,values)
+                cmd="mdfm__subcmd__values"
+                ;;
             mdfm__subcmd__help,check)
                 cmd="mdfm__subcmd__help__subcmd__check"
                 ;;
@@ -55,11 +64,17 @@ _mdfm() {
             mdfm__subcmd__help,del)
                 cmd="mdfm__subcmd__help__subcmd__del"
                 ;;
+            mdfm__subcmd__help,fmt)
+                cmd="mdfm__subcmd__help__subcmd__fmt"
+                ;;
             mdfm__subcmd__help,get)
                 cmd="mdfm__subcmd__help__subcmd__get"
                 ;;
             mdfm__subcmd__help,help)
                 cmd="mdfm__subcmd__help__subcmd__help"
+                ;;
+            mdfm__subcmd__help,keys)
+                cmd="mdfm__subcmd__help__subcmd__keys"
                 ;;
             mdfm__subcmd__help,man)
                 cmd="mdfm__subcmd__help__subcmd__man"
@@ -73,6 +88,9 @@ _mdfm() {
             mdfm__subcmd__help,update)
                 cmd="mdfm__subcmd__help__subcmd__update"
                 ;;
+            mdfm__subcmd__help,values)
+                cmd="mdfm__subcmd__help__subcmd__values"
+                ;;
             *)
                 ;;
         esac
@@ -80,7 +98,7 @@ _mdfm() {
 
     case "${cmd}" in
         mdfm)
-            opts="-l -C -h -V --format --output --files-only --where --config --ext --help --version get set del mv rename check completions man update help"
+            opts="-l -C -h -V --format --output --files-only --where --config --ext --help --version get set del mv rename check keys values fmt completions man update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -118,7 +136,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__check)
-            opts="-q -l -C -h --schema --quiet --errors-only --format --output --files-only --where --config --ext --help"
+            opts="-q -l -C -h --schema --quiet --errors-only --syntax-only --format --output --files-only --where --config --ext --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -235,6 +253,60 @@ _mdfm() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        mdfm__subcmd__fmt)
+            opts="-l -C -h --check --sort-keys --sort-array --to --indent-sequences --yaml-indent --dry-run --diff --format --output --files-only --where --config --ext --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --sort-array)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --to)
+                    COMPREPLY=($(compgen -W "yaml toml" -- "${cur}"))
+                    return 0
+                    ;;
+                --indent-sequences)
+                    COMPREPLY=($(compgen -W "true false" -- "${cur}"))
+                    return 0
+                    ;;
+                --yaml-indent)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --format)
+                    COMPREPLY=($(compgen -W "yaml toml" -- "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "table json plain files" -- "${cur}"))
+                    return 0
+                    ;;
+                --where)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ext)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         mdfm__subcmd__get)
             opts="-k -l -C -h --key --format --output --files-only --where --config --ext --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
@@ -282,7 +354,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__help)
-            opts="get set del mv check completions man update help"
+            opts="get set del mv check keys values fmt completions man update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -337,6 +409,20 @@ _mdfm() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        mdfm__subcmd__help__subcmd__fmt)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         mdfm__subcmd__help__subcmd__get)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -352,6 +438,20 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__help__subcmd__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        mdfm__subcmd__help__subcmd__keys)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -414,6 +514,62 @@ _mdfm() {
                 return 0
             fi
             case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        mdfm__subcmd__help__subcmd__values)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        mdfm__subcmd__keys)
+            opts="-l -C -h --sort --format --output --files-only --where --config --ext --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --sort)
+                    COMPREPLY=($(compgen -W "count alpha" -- "${cur}"))
+                    return 0
+                    ;;
+                --format)
+                    COMPREPLY=($(compgen -W "yaml toml" -- "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "table json plain files" -- "${cur}"))
+                    return 0
+                    ;;
+                --where)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ext)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -544,6 +700,48 @@ _mdfm() {
             case "${prev}" in
                 --version)
                     COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --format)
+                    COMPREPLY=($(compgen -W "yaml toml" -- "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "table json plain files" -- "${cur}"))
+                    return 0
+                    ;;
+                --where)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ext)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        mdfm__subcmd__values)
+            opts="-l -C -h --no-flatten --sort --format --output --files-only --where --config --ext --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --sort)
+                    COMPREPLY=($(compgen -W "count alpha" -- "${cur}"))
                     return 0
                     ;;
                 --format)

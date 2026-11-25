@@ -121,7 +121,7 @@ pub fn execute(
         let changed = !deleted.is_empty();
         let file_str = path.display().to_string();
         let diff_text = if changed && (!dry_run || show_diff) {
-            let rendered = doc.render(Some(&fm))?;
+            let rendered = doc.render_with_options(Some(&fm), config.yaml_format_options())?;
             if !dry_run {
                 fs::write(&path, &rendered)
                     .with_context(|| format!("Failed to write '{}'", path.display()))?;

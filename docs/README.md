@@ -58,8 +58,16 @@ mdfm mv --merge tag tags docs/
 # Delete frontmatter keys
 mdfm del draft legacy_id posts/
 
-# Validate frontmatter against a JSON Schema (quiet CI mode)
+# Validate frontmatter syntax or against a JSON Schema (quiet CI mode)
+mdfm check --syntax-only docs/
 mdfm check --errors-only --schema .mdfm-schema.json posts/
+
+# Audit frontmatter keys, types, and value frequencies
+mdfm keys docs/
+mdfm values tags docs/
+
+# Format frontmatter (2-space YAML sequences, key/array sorting, YAML <-> TOML conversion)
+mdfm fmt --sort-keys --sort-array tags --check docs/
 
 # Walk custom file extensions (e.g. CookLang or MDX)
 mdfm --ext cook get title recipes/

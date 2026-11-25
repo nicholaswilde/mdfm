@@ -5,13 +5,13 @@ pub mod frontmatter;
 
 use std::io::{self, Write};
 
-pub use cli::{Cli, CommandFactory, Commands, OutputFormat};
+pub use cli::{AuditSort, Cli, CommandFactory, Commands, OutputFormat};
 pub use config::{
     CliOverrides, ConfigFile, ConfigFormat, ResolvedConfig, ResolvedSchemaRule, SchemaRuleConfig,
 };
 pub use frontmatter::{
     ClosingDelimiter, Format, FrontmatterBlock, FrontmatterData, FrontmatterError, LineEnding,
-    SplitDocument,
+    SplitDocument, YamlFormatOptions,
 };
 
 /// Main CLI execution entry point invoked by `src/main.rs`.
@@ -48,13 +48,23 @@ pub fn run_app(cli: Cli, out: &mut dyn Write) -> anyhow::Result<()> {
         _ => {}
     }
 
-    let (cli_schema, cli_errors_only) = match &cli.command {
+    let (cli_schema, cli_errors_only, cli_indent_sequences, cli_yaml_indent) = match &cli.command {
         Commands::Check {
             schema,
             errors_only,
             ..
-        } => (schema.as_deref(), (*errors_only).then_some(true)),
-        _ => (None, None),
+        } => (
+            schema.as_deref(),
+            (*errors_only).then_some(true),
+            None,
+            None,
+        ),
+        Commands::Fmt {
+            indent_sequences,
+            yaml_indent,
+            ..
+        } => (None, None, *indent_sequences, *yaml_indent),
+        _ => (None, None, None, None),
     };
 
     let cli_output = if cli.files_only {
@@ -70,6 +80,8 @@ pub fn run_app(cli: Cli, out: &mut dyn Write) -> anyhow::Result<()> {
         schema: cli_schema,
         extensions: (!cli.ext.is_empty()).then_some(cli.ext.as_slice()),
         errors_only: cli_errors_only,
+        indent_sequences: cli_indent_sequences,
+        yaml_indent: cli_yaml_indent,
     })?;
 
     let filter = commands::compile_filter(cli.where_expr.as_deref())?;
@@ -110,9 +122,49 @@ pub fn run_app(cli: Cli, out: &mut dyn Write) -> anyhow::Result<()> {
             &resolved,
             out,
         ),
-        Commands::Check { paths, .. } => {
-            commands::check::execute(paths, filter.as_ref(), &resolved, out)
+        Commands::Check {
+            paths, syntax_only, ..
+        } => commands::check::execute(paths, *syntax_only, filter.as_ref(), &resolved, out),
+        Commands::Keys { paths, sort } => {
+            commands::audit::execute_keys(paths, *sort, filter.as_ref(), &resolved, out)
         }
+        Commands::Values {
+            key,
+            paths,
+            no_flatten,
+            sort,
+        } => commands::audit::execute_values(
+            key,
+            paths,
+            *no_flatten,
+            *sort,
+            filter.as_ref(),
+            &resolved,
+            out,
+        ),
+        Commands::Fmt {
+            paths,
+            check,
+            sort_keys,
+            sort_array,
+            to,
+            dry_run,
+            diff,
+            ..
+        } => commands::fmt::execute(
+            paths,
+            &commands::fmt::FmtOptions {
+                check: *check,
+                sort_keys: *sort_keys,
+                sort_arrays: sort_array.clone(),
+                target_format: *to,
+                dry_run: *dry_run,
+                show_diff: *diff,
+            },
+            filter.as_ref(),
+            &resolved,
+            out,
+        ),
         Commands::Completions { .. } | Commands::Man | Commands::Update { .. } => {
             unreachable!("handled before config resolution")
         }
@@ -256,12 +308,101 @@ mod tests {
                 paths,
                 schema,
                 errors_only,
+                syntax_only,
             } => {
                 assert_eq!(paths, vec![PathBuf::from("docs/")]);
                 assert_eq!(schema, Some(PathBuf::from(".mdfm-schema.json")));
                 assert!(errors_only);
+                assert!(!syntax_only);
             }
             _ => panic!("expected check subcommand"),
+        }
+
+        let syntax_check =
+            Cli::try_parse_from(["mdfm", "check", "--syntax-only", "docs/"]).unwrap();
+        assert!(matches!(
+            syntax_check.command,
+            Commands::Check {
+                syntax_only: true,
+                ..
+            }
+        ));
+
+        let keys_cli = Cli::try_parse_from(["mdfm", "keys", "--sort", "alpha", "docs/"]).unwrap();
+        match keys_cli.command {
+            Commands::Keys { paths, sort } => {
+                assert_eq!(paths, vec![PathBuf::from("docs/")]);
+                assert_eq!(sort, AuditSort::Alpha);
+            }
+            _ => panic!("expected keys subcommand"),
+        }
+
+        let values_cli = Cli::try_parse_from([
+            "mdfm",
+            "values",
+            "tags",
+            "--no-flatten",
+            "--sort",
+            "alpha",
+            "docs/",
+        ])
+        .unwrap();
+        match values_cli.command {
+            Commands::Values {
+                key,
+                paths,
+                no_flatten,
+                sort,
+            } => {
+                assert_eq!(key, "tags");
+                assert_eq!(paths, vec![PathBuf::from("docs/")]);
+                assert!(no_flatten);
+                assert_eq!(sort, AuditSort::Alpha);
+            }
+            _ => panic!("expected values subcommand"),
+        }
+
+        let fmt_cli = Cli::try_parse_from([
+            "mdfm",
+            "fmt",
+            "--check",
+            "--sort-keys",
+            "--sort-array",
+            "tags,categories",
+            "--to",
+            "toml",
+            "--indent-sequences",
+            "false",
+            "--yaml-indent",
+            "4",
+            "--dry-run",
+            "--diff",
+            "docs/",
+        ])
+        .unwrap();
+        match fmt_cli.command {
+            Commands::Fmt {
+                paths,
+                check,
+                sort_keys,
+                sort_array,
+                to,
+                indent_sequences,
+                yaml_indent,
+                dry_run,
+                diff,
+            } => {
+                assert_eq!(paths, vec![PathBuf::from("docs/")]);
+                assert!(check);
+                assert!(sort_keys);
+                assert_eq!(sort_array, vec!["tags", "categories"]);
+                assert_eq!(to, Some(Format::Toml));
+                assert_eq!(indent_sequences, Some(false));
+                assert_eq!(yaml_indent, Some(4));
+                assert!(dry_run);
+                assert!(diff);
+            }
+            _ => panic!("expected fmt subcommand"),
         }
 
         let quiet_short = Cli::try_parse_from(["mdfm", "check", "-q", "docs/"]).unwrap();

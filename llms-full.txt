@@ -62,19 +62,22 @@ mdfm/
 ├── src/
 │   ├── main.rs                # Thin binary wrapper calling mdfm::run()
 │   ├── lib.rs                 # Library exports and CLI dispatch (run, run_app)
-│   ├── cli.rs                 # clap derive/env definitions (get, set, del, check, completions, man, update)
+│   ├── cli.rs                 # clap derive/env definitions (get, set, del, mv, check, keys, values, fmt, completions, man, update)
 │   ├── config.rs              # Layered configuration resolver and local .mdfm.toml discovery
 │   ├── frontmatter/
 │   │   ├── mod.rs             # Zero-copy byte-offset splitter, renderer, FrontmatterData enum
-│   │   ├── yaml.rs            # YAML dot-path get/set/del helpers (serde_yaml_ng)
-│   │   ├── toml.rs            # Lossless TOML dot-path get/set/del helpers (toml_edit)
+│   │   ├── yaml.rs            # YAML dot-path helpers, configurable indent serializer, sorting, conversion
+│   │   ├── toml.rs            # Lossless TOML dot-path helpers, sorting, conversion (toml_edit)
 │   │   └── filter.rs          # --where expression lexer, parser, and evaluator
 │   └── commands/
-│       ├── mod.rs             # Shared .gitignore-aware file walker and output formatters
+│       ├── mod.rs             # Shared .gitignore-aware file walker, unified diff, and output formatters
+│       ├── audit.rs           # keys and values taxonomy audit subcommand handlers
 │       ├── get.rs             # get subcommand handler
-│       ├── set.rs             # set subcommand handler (--dry-run, typed CLI value parser)
-│       ├── del.rs             # del subcommand handler (--dry-run)
-│       ├── check.rs           # check JSON Schema validation subcommand handler
+│       ├── set.rs             # set subcommand handler (--dry-run, --diff, typed CLI value parser)
+│       ├── del.rs             # del subcommand handler (--dry-run, --diff)
+│       ├── mv.rs              # mv / rename subcommand handler (--merge, --overwrite, --dry-run, --diff)
+│       ├── fmt.rs             # fmt subcommand handler (--check, --sort-keys, --sort-array, --to)
+│       ├── check.rs           # check syntax and JSON Schema validation subcommand handler
 │       └── update.rs          # update GitHub release self-updater (--check, -y, --version)
 └── tests/
     ├── cli.rs                 # End-to-end CLI and CRLF preservation integration tests
@@ -212,18 +215,50 @@ mdfm mv --merge tag tags docs/
 mdfm rename author.full_name author.name docs/ --dry-run --diff
 ```
 
-### `mdfm check [--schema <SCHEMA>] [-q|--errors-only|--quiet] [PATHS]...`
+### `mdfm check [--syntax-only] [--schema <SCHEMA>] [-q|--errors-only|--quiet] [PATHS]...`
 
-Validate frontmatter of discovered files against a JSON Schema file (`--schema`, `MDFM_SCHEMA`, or `schema` in config).
+Validate frontmatter syntax and, when configured, validate against a JSON Schema (`--schema`, `MDFM_SCHEMA`, `schema`, or `[[schemas]]` in config).
 
+- Runs syntax-only YAML/TOML parse validation automatically when no schema is configured, or explicitly when `--syntax-only` is passed (bypassing any configured `.mdfm.toml` schema).
 - Exits `0` when all matched files validate cleanly.
 - Exits non-zero with file-level validation error details (`ok` / `fail` in `table`, structured objects in `json`, `<file>\terror: ...` in `plain`) when any file fails parsing or schema validation.
 - With `-q` / `--errors-only` / `--quiet` (or `errors_only = true` in `.mdfm.toml`): hides passing entries, prints `<ok> ok, <failed> failed` in `table`/`plain` modes, and emits only failing entries (`[]` when all pass) in `json` mode.
 
 ```bash
+mdfm check --syntax-only docs/
 mdfm check --schema .mdfm-schema.json posts/
 mdfm check --errors-only --schema .mdfm-schema.json posts/
 mdfm --output json check --errors-only --schema schema.json docs/
+```
+
+### `mdfm keys [--sort <count|alpha>] [PATHS]...`
+
+Audit frontmatter keys (including nested dot-paths), file counts, and observed JSON types (`string`, `number`, `boolean`, `array`, `object`, `null`) across discovered files. Supports `--where` and `--output <table|json|plain|files>`.
+
+### `mdfm values <KEY> [--no-flatten] [--sort <count|alpha>] [PATHS]...`
+
+Audit unique values and occurrence counts for `<KEY>` across files. Flattens array values by default (`--no-flatten` counts whole arrays). Supports nested dot-paths, `--where`, and `--output <table|json|plain|files>`.
+
+```bash
+mdfm keys docs/
+mdfm values tags docs/
+mdfm values tags --no-flatten --sort alpha docs/
+```
+
+### `mdfm fmt [--check] [--sort-keys] [--sort-array <KEY>] [--to <yaml|toml>] [--indent-sequences <BOOL>] [--yaml-indent <N>] [--dry-run] [--diff] [PATHS]...`
+
+Format and normalize frontmatter style without altering Markdown bodies, UTF-8 BOM, or line endings:
+
+- Default YAML serialization indents sequences by 2 spaces (`indent_sequences = true`, `yaml_indent = 2`), shared across `fmt`, `set`, `del`, and `mv`.
+- `--check` exits non-zero if any file requires formatting without modifying disk.
+- `--sort-keys` recursively sorts mapping/table keys alphabetically.
+- `--sort-array <KEY>` sorts and deduplicates array values at dot-path `<KEY>`.
+- `--to <yaml|toml>` converts frontmatter between YAML (`---`) and TOML (`+++`).
+
+```bash
+mdfm fmt --check --diff docs/
+mdfm fmt --sort-keys --sort-array tags docs/
+mdfm fmt --to toml docs/
 ```
 
 ### `mdfm completions <SHELL>`
@@ -280,7 +315,7 @@ mdfm --where '(draft == false or weight >= 10) and not (author.name == "Bob")' g
 4. **User global config:**
    - Linux/macOS: `$XDG_CONFIG_HOME/mdfm/config.{toml,yaml,yml,json}` (fallback `~/.config/mdfm/config.*`)
    - Windows: `%APPDATA%\mdfm\config.{toml,yaml,yml,json}`
-5. **Built-in defaults:** `default_format = "yaml"`, `output = "table"`, `schema = None`, `ignore = []`, `extensions = ["md", "markdown"]`, `errors_only = false`
+5. **Built-in defaults:** `default_format = "yaml"`, `output = "table"`, `schema = None`, `ignore = []`, `extensions = ["md", "markdown"]`, `errors_only = false`, `indent_sequences = true`, `yaml_indent = 2`, `sort_keys = false`, `sort_arrays = []`
 
 ### Example `.mdfm.toml`
 
@@ -304,6 +339,14 @@ extensions = ["md", "markdown"]
 
 # Only show validation failures and a compact summary line in `mdfm check`.
 errors_only = false
+
+# YAML sequence indentation and indent width (shared by fmt, set, del, mv).
+indent_sequences = true
+yaml_indent = 2
+
+# Default `mdfm fmt` sorting rules.
+sort_keys = false
+sort_arrays = ["tags"]
 
 # Per-glob JSON Schemas for `mdfm check` (ordered; falls back to top-level `schema`).
 [[schemas]]

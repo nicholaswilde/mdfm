@@ -73,51 +73,57 @@ fn rule_matches_path(rule: &CompiledSchemaRule, file_path: &Path) -> bool {
 
 pub fn execute(
     paths: &[PathBuf],
+    syntax_only: bool,
     filter: Option<&FilterExpr>,
     config: &ResolvedConfig,
     out: &mut dyn Write,
 ) -> Result<()> {
-    if config.schema.is_none() && config.schemas.is_empty() {
-        anyhow::bail!(
-            "No JSON Schema specified. Pass --schema <PATH>, set MDFM_SCHEMA, or configure 'schema' / '[[schemas]]' in .mdfm.toml"
-        );
-    }
+    let effective_syntax_only =
+        syntax_only || (config.schema.is_none() && config.schemas.is_empty());
 
     let mut validators: HashMap<PathBuf, jsonschema::Validator> = HashMap::new();
-    if let Some(ref default_schema) = config.schema {
-        compile_validator(default_schema, &mut validators)?;
-    }
+    let mut compiled_rules = Vec::new();
 
-    let mut compiled_rules = Vec::with_capacity(config.schemas.len());
-    for rule in &config.schemas {
-        let mut matchers = Vec::with_capacity(rule.patterns.len());
-        for pat in &rule.patterns {
-            let glob = Glob::new(pat)
-                .with_context(|| format!("Invalid [[schemas]] glob pattern '{pat}'"))?;
-            matchers.push(glob.compile_matcher());
+    if !effective_syntax_only {
+        if let Some(ref default_schema) = config.schema {
+            compile_validator(default_schema, &mut validators)?;
         }
-        compile_validator(&rule.schema, &mut validators)?;
-        compiled_rules.push(CompiledSchemaRule {
-            matchers,
-            schema_path: rule.schema.clone(),
-            base_dir: rule.base_dir.clone(),
-        });
+
+        compiled_rules.reserve(config.schemas.len());
+        for rule in &config.schemas {
+            let mut matchers = Vec::with_capacity(rule.patterns.len());
+            for pat in &rule.patterns {
+                let glob = Glob::new(pat)
+                    .with_context(|| format!("Invalid [[schemas]] glob pattern '{pat}'"))?;
+                matchers.push(glob.compile_matcher());
+            }
+            compile_validator(&rule.schema, &mut validators)?;
+            compiled_rules.push(CompiledSchemaRule {
+                matchers,
+                schema_path: rule.schema.clone(),
+                base_dir: rule.base_dir.clone(),
+            });
+        }
     }
 
     let files = collect_markdown_files(paths, &config.ignore, &config.extensions)?;
     let mut results = Vec::new();
 
     for path in files {
-        let selected_schema = compiled_rules
-            .iter()
-            .find(|rule| rule_matches_path(rule, &path))
-            .map(|rule| rule.schema_path.as_path())
-            .or(config.schema.as_deref());
+        let validator = if effective_syntax_only {
+            None
+        } else {
+            let selected_schema = compiled_rules
+                .iter()
+                .find(|rule| rule_matches_path(rule, &path))
+                .map(|rule| rule.schema_path.as_path())
+                .or(config.schema.as_deref());
 
-        let Some(schema_path) = selected_schema else {
-            continue;
+            let Some(schema_path) = selected_schema else {
+                continue;
+            };
+            Some(&validators[schema_path])
         };
-        let validator = &validators[schema_path];
 
         let content = fs::read_to_string(&path)
             .with_context(|| format!("Failed to read '{}'", path.display()))?;
@@ -160,19 +166,22 @@ pub fn execute(
             }
         }
 
-        let instance = fm_json.unwrap_or_else(|| json!({}));
-
-        let errors: Vec<String> = validator
-            .iter_errors(&instance)
-            .map(|e| {
-                let loc = e.instance_path.to_string();
-                if loc.is_empty() {
-                    e.to_string()
-                } else {
-                    format!("{loc}: {e}")
-                }
-            })
-            .collect();
+        let errors: Vec<String> = if let Some(validator) = validator {
+            let instance = fm_json.unwrap_or_else(|| json!({}));
+            validator
+                .iter_errors(&instance)
+                .map(|e| {
+                    let loc = e.instance_path.to_string();
+                    if loc.is_empty() {
+                        e.to_string()
+                    } else {
+                        format!("{loc}: {e}")
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         results.push(CheckEntry {
             file: path.display().to_string(),
@@ -254,18 +263,28 @@ mod tests {
         fs::write(&bad_fm, "---\n[broken\n---\nBody\n").unwrap();
         fs::write(&plain, "# Body only\n").unwrap();
 
-        // Missing schema config errors.
+        // Missing schema config runs automatic syntax-only validation (valid file passes).
         let no_schema_cfg = ResolvedConfig::default();
         let mut out = Vec::new();
-        assert!(execute(std::slice::from_ref(&valid), None, &no_schema_cfg, &mut out).is_err());
+        execute(
+            std::slice::from_ref(&valid),
+            false,
+            None,
+            &no_schema_cfg,
+            &mut out,
+        )
+        .unwrap();
+        assert!(String::from_utf8(out).unwrap().contains("ok"));
 
-        // Nonexistent schema file errors.
+        // Nonexistent schema file errors when schema validation is active.
+        let mut out = Vec::new();
         let missing_schema_cfg = ResolvedConfig {
             schema: Some(dir.path().join("missing.json")),
             ..ResolvedConfig::default()
         };
         assert!(execute(
             std::slice::from_ref(&valid),
+            false,
             None,
             &missing_schema_cfg,
             &mut out
@@ -279,7 +298,14 @@ mod tests {
             schema: Some(bad_json_schema),
             ..ResolvedConfig::default()
         };
-        assert!(execute(std::slice::from_ref(&valid), None, &bad_json_cfg, &mut out).is_err());
+        assert!(execute(
+            std::slice::from_ref(&valid),
+            false,
+            None,
+            &bad_json_cfg,
+            &mut out
+        )
+        .is_err());
 
         // Invalid JSON Schema specification errors.
         let bad_spec_schema = dir.path().join("bad_spec.json");
@@ -288,7 +314,14 @@ mod tests {
             schema: Some(bad_spec_schema),
             ..ResolvedConfig::default()
         };
-        assert!(execute(std::slice::from_ref(&valid), None, &bad_spec_cfg, &mut out).is_err());
+        assert!(execute(
+            std::slice::from_ref(&valid),
+            false,
+            None,
+            &bad_spec_cfg,
+            &mut out
+        )
+        .is_err());
 
         // Valid schema file.
         let schema = dir.path().join("schema.json");
@@ -312,6 +345,7 @@ mod tests {
                 bad_fm.clone(),
                 plain.clone(),
             ],
+            false,
             None,
             &table_cfg,
             &mut table_out,
@@ -332,6 +366,7 @@ mod tests {
         let mut json_out = Vec::new();
         execute(
             &[valid, invalid, plain],
+            false,
             Some(&filter),
             &json_cfg,
             &mut json_out,
@@ -367,13 +402,21 @@ mod tests {
             ..ResolvedConfig::default()
         };
         let mut out = Vec::new();
-        execute(&[valid1.clone(), valid2.clone()], None, &cfg, &mut out).unwrap();
+        execute(
+            &[valid1.clone(), valid2.clone()],
+            false,
+            None,
+            &cfg,
+            &mut out,
+        )
+        .unwrap();
         assert_eq!(String::from_utf8(out).unwrap().trim(), "2 ok, 0 failed");
 
         // Table partial-fail: only failing row in table + summary line + Err.
         let mut out = Vec::new();
         assert!(execute(
             &[valid1.clone(), valid2.clone(), invalid.clone()],
+            false,
             None,
             &cfg,
             &mut out
@@ -395,6 +438,7 @@ mod tests {
         let mut out = Vec::new();
         execute(
             &[valid1.clone(), valid2.clone()],
+            false,
             None,
             &plain_cfg,
             &mut out,
@@ -406,6 +450,7 @@ mod tests {
         let mut out = Vec::new();
         assert!(execute(
             &[valid1.clone(), invalid.clone()],
+            false,
             None,
             &plain_cfg,
             &mut out
@@ -425,13 +470,20 @@ mod tests {
             ..ResolvedConfig::default()
         };
         let mut out = Vec::new();
-        execute(&[valid1.clone(), valid2.clone()], None, &json_cfg, &mut out).unwrap();
+        execute(
+            &[valid1.clone(), valid2.clone()],
+            false,
+            None,
+            &json_cfg,
+            &mut out,
+        )
+        .unwrap();
         let parsed: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
         assert!(parsed.is_empty());
 
         // JSON partial-fail: array containing only failing entries.
         let mut out = Vec::new();
-        assert!(execute(&[valid1, invalid], None, &json_cfg, &mut out).is_err());
+        assert!(execute(&[valid1, invalid], false, None, &json_cfg, &mut out).is_err());
         let parsed: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0]["valid"], json!(false));
@@ -440,7 +492,14 @@ mod tests {
         // Empty directory with errors_only: 0 ok, 0 failed / [].
         let empty_dir = tempfile::tempdir().unwrap();
         let mut out = Vec::new();
-        execute(&[empty_dir.path().to_path_buf()], None, &cfg, &mut out).unwrap();
+        execute(
+            &[empty_dir.path().to_path_buf()],
+            false,
+            None,
+            &cfg,
+            &mut out,
+        )
+        .unwrap();
         assert_eq!(String::from_utf8(out).unwrap().trim(), "0 ok, 0 failed");
     }
 
@@ -472,7 +531,14 @@ mod tests {
             ..ResolvedConfig::default()
         };
         let mut out = Vec::new();
-        execute(&[dir.path().to_path_buf()], None, &rules_only_cfg, &mut out).unwrap();
+        execute(
+            &[dir.path().to_path_buf()],
+            false,
+            None,
+            &rules_only_cfg,
+            &mut out,
+        )
+        .unwrap();
         let parsed: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
         assert_eq!(parsed.len(), 1);
         assert!(parsed[0]["file"].as_str().unwrap().contains("chart.md"));
@@ -483,7 +549,14 @@ mod tests {
             ..rules_only_cfg
         };
         let mut out = Vec::new();
-        execute(&[dir.path().to_path_buf()], None, &with_fallback, &mut out).unwrap();
+        execute(
+            &[dir.path().to_path_buf()],
+            false,
+            None,
+            &with_fallback,
+            &mut out,
+        )
+        .unwrap();
         let parsed: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
         assert_eq!(parsed.len(), 2);
 
@@ -497,6 +570,102 @@ mod tests {
             ..ResolvedConfig::default()
         };
         let mut out = Vec::new();
-        assert!(execute(&[dir.path().to_path_buf()], None, &bad_glob_cfg, &mut out).is_err());
+        assert!(execute(
+            &[dir.path().to_path_buf()],
+            false,
+            None,
+            &bad_glob_cfg,
+            &mut out
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn check_syntax_only_yaml_toml_body_only_and_bypasses_schema() {
+        let dir = tempfile::tempdir().unwrap();
+        let valid_yaml = dir.path().join("valid_yaml.md");
+        let valid_toml = dir.path().join("valid_toml.md");
+        let body_only = dir.path().join("plain.md");
+        let bad_yaml = dir.path().join("bad_yaml.md");
+        let bad_toml = dir.path().join("bad_toml.md");
+
+        fs::write(&valid_yaml, "---\ntitle: \"Ok\"\n---\nBody\n").unwrap();
+        fs::write(&valid_toml, "+++\ntitle = \"Ok\"\n+++\nBody\n").unwrap();
+        fs::write(&body_only, "# No frontmatter\n").unwrap();
+        fs::write(&bad_yaml, "---\ntitle: :cake: Pumpkin Cake\n---\nBody\n").unwrap();
+        fs::write(&bad_toml, "+++\ntitle = [unclosed\n+++\nBody\n").unwrap();
+
+        // Automatic syntax-only mode when no schema is configured: valid YAML, TOML, body-only pass.
+        let no_schema = ResolvedConfig {
+            output: OutputFormat::Json,
+            ..ResolvedConfig::default()
+        };
+        let mut out = Vec::new();
+        execute(
+            &[valid_yaml.clone(), valid_toml.clone(), body_only.clone()],
+            false,
+            None,
+            &no_schema,
+            &mut out,
+        )
+        .unwrap();
+        let parsed: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+        assert_eq!(parsed.len(), 3);
+        assert!(parsed.iter().all(|e| e["valid"] == json!(true)));
+
+        // Malformed YAML and TOML fail in syntax-only mode.
+        let mut out = Vec::new();
+        assert!(execute(
+            &[valid_yaml.clone(), bad_yaml.clone(), bad_toml.clone()],
+            true,
+            None,
+            &no_schema,
+            &mut out,
+        )
+        .is_err());
+        let parsed: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+        assert_eq!(parsed.len(), 3);
+        let by_name = |name: &str| {
+            parsed
+                .iter()
+                .find(|e| e["file"].as_str().unwrap().ends_with(name))
+                .unwrap()
+        };
+        assert_eq!(by_name("valid_yaml.md")["valid"], json!(true));
+        assert_eq!(by_name("bad_yaml.md")["valid"], json!(false));
+        assert_eq!(by_name("bad_toml.md")["valid"], json!(false));
+
+        // Explicit --syntax-only bypasses configured schema (even strict or missing schema path).
+        let strict_schema = dir.path().join("strict.json");
+        fs::write(
+            &strict_schema,
+            r#"{"type":"object","required":["must_exist"]}"#,
+        )
+        .unwrap();
+        let strict_cfg = ResolvedConfig {
+            output: OutputFormat::Json,
+            schema: Some(strict_schema),
+            ..ResolvedConfig::default()
+        };
+        let mut out = Vec::new();
+        execute(
+            &[valid_yaml.clone(), valid_toml, body_only],
+            true,
+            None,
+            &strict_cfg,
+            &mut out,
+        )
+        .unwrap();
+        let parsed: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+        assert_eq!(parsed.len(), 3);
+        assert!(parsed.iter().all(|e| e["valid"] == json!(true)));
+
+        // Even a nonexistent configured schema is bypassed when syntax_only is true.
+        let missing_cfg = ResolvedConfig {
+            schema: Some(dir.path().join("nonexistent.json")),
+            ..ResolvedConfig::default()
+        };
+        let mut out = Vec::new();
+        execute(&[valid_yaml], true, None, &missing_cfg, &mut out).unwrap();
     }
 }

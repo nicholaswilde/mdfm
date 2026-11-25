@@ -41,7 +41,10 @@ complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "set" -d 'Update, insert, 
 complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "del" -d 'Delete one or more keys from frontmatter'
 complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "mv" -d 'Rename or merge a frontmatter key across files'
 complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "rename" -d 'Rename or merge a frontmatter key across files'
-complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "check" -d 'Validate frontmatter against a JSON Schema'
+complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "check" -d 'Validate frontmatter syntax and optionally against a JSON Schema'
+complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "keys" -d 'Audit frontmatter keys, file counts, and observed types across files'
+complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "values" -d 'Audit unique values and occurrence counts for a frontmatter key across files'
+complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "fmt" -d 'Format and normalize frontmatter style (indentation, key/array sorting, YAML/TOML conversion)'
 complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "completions" -d 'Generate shell completion scripts (bash, zsh, fish, powershell, elvish)'
 complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "man" -d 'Generate UNIX roff man page'
 complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "update" -d 'Check for and install the latest mdfm release from GitHub'
@@ -125,8 +128,57 @@ complete -c mdfm -n "__fish_mdfm_using_subcommand check" -l where -d 'Optional f
 complete -c mdfm -n "__fish_mdfm_using_subcommand check" -s C -l config -d 'Path to explicit configuration file override (TOML, YAML, or JSON)' -r -F
 complete -c mdfm -n "__fish_mdfm_using_subcommand check" -l ext -d 'File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)' -r
 complete -c mdfm -n "__fish_mdfm_using_subcommand check" -s q -l errors-only -l quiet -d 'Show only validation failures and a compact summary line'
+complete -c mdfm -n "__fish_mdfm_using_subcommand check" -l syntax-only -d 'Validate YAML/TOML frontmatter syntax only (bypasses any configured JSON Schema)'
 complete -c mdfm -n "__fish_mdfm_using_subcommand check" -s l -l files-only -d 'Print only matching file paths, one per line (shorthand for --output files)'
 complete -c mdfm -n "__fish_mdfm_using_subcommand check" -s h -l help -d 'Print help'
+complete -c mdfm -n "__fish_mdfm_using_subcommand keys" -l sort -d 'Sort order for keys (count descending or alphabetical)' -r -f -a "count\t'Sort by count descending, then alphabetically ascending'
+alpha\t'Sort alphabetically ascending'"
+complete -c mdfm -n "__fish_mdfm_using_subcommand keys" -l format -d 'Frontmatter format used when creating new frontmatter (yaml or toml)' -r -f -a "yaml\t''
+toml\t''"
+complete -c mdfm -n "__fish_mdfm_using_subcommand keys" -l output -d 'Output presentation format (table, json, plain, or files)' -r -f -a "table\t''
+json\t''
+plain\t''
+files\t''"
+complete -c mdfm -n "__fish_mdfm_using_subcommand keys" -l where -d 'Optional filter expression (e.g. \'draft == true\', \'not has_frontmatter\', \'frontmatter_format == "toml"\', \'`prep time` != null\')' -r
+complete -c mdfm -n "__fish_mdfm_using_subcommand keys" -s C -l config -d 'Path to explicit configuration file override (TOML, YAML, or JSON)' -r -F
+complete -c mdfm -n "__fish_mdfm_using_subcommand keys" -l ext -d 'File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)' -r
+complete -c mdfm -n "__fish_mdfm_using_subcommand keys" -s l -l files-only -d 'Print only matching file paths, one per line (shorthand for --output files)'
+complete -c mdfm -n "__fish_mdfm_using_subcommand keys" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c mdfm -n "__fish_mdfm_using_subcommand values" -l sort -d 'Sort order for values (count descending or alphabetical)' -r -f -a "count\t'Sort by count descending, then alphabetically ascending'
+alpha\t'Sort alphabetically ascending'"
+complete -c mdfm -n "__fish_mdfm_using_subcommand values" -l format -d 'Frontmatter format used when creating new frontmatter (yaml or toml)' -r -f -a "yaml\t''
+toml\t''"
+complete -c mdfm -n "__fish_mdfm_using_subcommand values" -l output -d 'Output presentation format (table, json, plain, or files)' -r -f -a "table\t''
+json\t''
+plain\t''
+files\t''"
+complete -c mdfm -n "__fish_mdfm_using_subcommand values" -l where -d 'Optional filter expression (e.g. \'draft == true\', \'not has_frontmatter\', \'frontmatter_format == "toml"\', \'`prep time` != null\')' -r
+complete -c mdfm -n "__fish_mdfm_using_subcommand values" -s C -l config -d 'Path to explicit configuration file override (TOML, YAML, or JSON)' -r -F
+complete -c mdfm -n "__fish_mdfm_using_subcommand values" -l ext -d 'File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)' -r
+complete -c mdfm -n "__fish_mdfm_using_subcommand values" -l no-flatten -d 'Do not flatten array values into individual elements'
+complete -c mdfm -n "__fish_mdfm_using_subcommand values" -s l -l files-only -d 'Print only matching file paths, one per line (shorthand for --output files)'
+complete -c mdfm -n "__fish_mdfm_using_subcommand values" -s h -l help -d 'Print help (see more with \'--help\')'
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -l sort-array -d 'Sort and deduplicate array values at the given key path(s) (repeatable or comma-separated)' -r
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -l to -d 'Convert frontmatter to the target format (yaml or toml)' -r -f -a "yaml\t''
+toml\t''"
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -l indent-sequences -d 'Indent YAML sequence items under their parent key (true or false)' -r -f -a "true\t''
+false\t''"
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -l yaml-indent -d 'Number of spaces per YAML indentation level (default: 2)' -r
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -l format -d 'Frontmatter format used when creating new frontmatter (yaml or toml)' -r -f -a "yaml\t''
+toml\t''"
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -l output -d 'Output presentation format (table, json, plain, or files)' -r -f -a "table\t''
+json\t''
+plain\t''
+files\t''"
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -l where -d 'Optional filter expression (e.g. \'draft == true\', \'not has_frontmatter\', \'frontmatter_format == "toml"\', \'`prep time` != null\')' -r
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -s C -l config -d 'Path to explicit configuration file override (TOML, YAML, or JSON)' -r -F
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -l ext -d 'File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)' -r
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -l check -d 'Check formatting without modifying files; exit non-zero if any file needs formatting'
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -l sort-keys -d 'Sort frontmatter keys alphabetically (recursively)'
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -l dry-run -d 'Preview changes without writing files to disk'
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -l diff -d 'Show unified diff of frontmatter formatting changes'
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -s l -l files-only -d 'Print only matching file paths, one per line (shorthand for --output files)'
+complete -c mdfm -n "__fish_mdfm_using_subcommand fmt" -s h -l help -d 'Print help'
 complete -c mdfm -n "__fish_mdfm_using_subcommand completions" -l format -d 'Frontmatter format used when creating new frontmatter (yaml or toml)' -r -f -a "yaml\t''
 toml\t''"
 complete -c mdfm -n "__fish_mdfm_using_subcommand completions" -l output -d 'Output presentation format (table, json, plain, or files)' -r -f -a "table\t''
@@ -163,12 +215,15 @@ complete -c mdfm -n "__fish_mdfm_using_subcommand update" -l check -d 'Check for
 complete -c mdfm -n "__fish_mdfm_using_subcommand update" -s y -l yes -d 'Skip confirmation prompt before installing'
 complete -c mdfm -n "__fish_mdfm_using_subcommand update" -s l -l files-only -d 'Print only matching file paths, one per line (shorthand for --output files)'
 complete -c mdfm -n "__fish_mdfm_using_subcommand update" -s h -l help -d 'Print help'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check completions man update help" -f -a "get" -d 'Query one or more frontmatter keys (dot paths, comma-separated, -k/--key, or \'.\' for full frontmatter)'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check completions man update help" -f -a "set" -d 'Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check completions man update help" -f -a "del" -d 'Delete one or more keys from frontmatter'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check completions man update help" -f -a "mv" -d 'Rename or merge a frontmatter key across files'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check completions man update help" -f -a "check" -d 'Validate frontmatter against a JSON Schema'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check completions man update help" -f -a "completions" -d 'Generate shell completion scripts (bash, zsh, fish, powershell, elvish)'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check completions man update help" -f -a "man" -d 'Generate UNIX roff man page'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check completions man update help" -f -a "update" -d 'Check for and install the latest mdfm release from GitHub'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check completions man update help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check keys values fmt completions man update help" -f -a "get" -d 'Query one or more frontmatter keys (dot paths, comma-separated, -k/--key, or \'.\' for full frontmatter)'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check keys values fmt completions man update help" -f -a "set" -d 'Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check keys values fmt completions man update help" -f -a "del" -d 'Delete one or more keys from frontmatter'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check keys values fmt completions man update help" -f -a "mv" -d 'Rename or merge a frontmatter key across files'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check keys values fmt completions man update help" -f -a "check" -d 'Validate frontmatter syntax and optionally against a JSON Schema'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check keys values fmt completions man update help" -f -a "keys" -d 'Audit frontmatter keys, file counts, and observed types across files'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check keys values fmt completions man update help" -f -a "values" -d 'Audit unique values and occurrence counts for a frontmatter key across files'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check keys values fmt completions man update help" -f -a "fmt" -d 'Format and normalize frontmatter style (indentation, key/array sorting, YAML/TOML conversion)'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check keys values fmt completions man update help" -f -a "completions" -d 'Generate shell completion scripts (bash, zsh, fish, powershell, elvish)'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check keys values fmt completions man update help" -f -a "man" -d 'Generate UNIX roff man page'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check keys values fmt completions man update help" -f -a "update" -d 'Check for and install the latest mdfm release from GitHub'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del mv check keys values fmt completions man update help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'

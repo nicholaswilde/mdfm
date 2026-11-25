@@ -141,11 +141,71 @@ _arguments "${_arguments_options[@]}" : \
 '-q[Show only validation failures and a compact summary line]' \
 '--errors-only[Show only validation failures and a compact summary line]' \
 '--quiet[Show only validation failures and a compact summary line]' \
+'--syntax-only[Validate YAML/TOML frontmatter syntax only (bypasses any configured JSON Schema)]' \
 '-l[Print only matching file paths, one per line (shorthand for --output files)]' \
 '--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '*::paths -- Files or directories to validate (defaults to current directory '\''.'\''):_files' \
+&& ret=0
+;;
+(keys)
+_arguments "${_arguments_options[@]}" : \
+'--sort=[Sort order for keys (count descending or alphabetical)]:SORT:((count\:"Sort by count descending, then alphabetically ascending"
+alpha\:"Sort alphabetically ascending"))' \
+'--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
+'--output=[Output presentation format (table, json, plain, or files)]:OUTPUT:(table json plain files)' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''not has_frontmatter'\'', '\''frontmatter_format == "toml"'\'', '\''\`prep time\` != null'\'')]:EXPR:_default' \
+'-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
+'-l[Print only matching file paths, one per line (shorthand for --output files)]' \
+'--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'*::paths -- Files or directories to inspect (defaults to current directory '\''.'\''):_files' \
+&& ret=0
+;;
+(values)
+_arguments "${_arguments_options[@]}" : \
+'--sort=[Sort order for values (count descending or alphabetical)]:SORT:((count\:"Sort by count descending, then alphabetically ascending"
+alpha\:"Sort alphabetically ascending"))' \
+'--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
+'--output=[Output presentation format (table, json, plain, or files)]:OUTPUT:(table json plain files)' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''not has_frontmatter'\'', '\''frontmatter_format == "toml"'\'', '\''\`prep time\` != null'\'')]:EXPR:_default' \
+'-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
+'--no-flatten[Do not flatten array values into individual elements]' \
+'-l[Print only matching file paths, one per line (shorthand for --output files)]' \
+'--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+':key -- Dot-separated frontmatter key path to audit (e.g. tags, author.role):_default' \
+'*::paths -- Files or directories to inspect (defaults to current directory '\''.'\''):_files' \
+&& ret=0
+;;
+(fmt)
+_arguments "${_arguments_options[@]}" : \
+'*--sort-array=[Sort and deduplicate array values at the given key path(s) (repeatable or comma-separated)]:KEY:_default' \
+'--to=[Convert frontmatter to the target format (yaml or toml)]:FORMAT:(yaml toml)' \
+'--indent-sequences=[Indent YAML sequence items under their parent key (true or false)]:BOOL:(true false)' \
+'--yaml-indent=[Number of spaces per YAML indentation level (default\: 2)]:SPACES:_default' \
+'--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
+'--output=[Output presentation format (table, json, plain, or files)]:OUTPUT:(table json plain files)' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''not has_frontmatter'\'', '\''frontmatter_format == "toml"'\'', '\''\`prep time\` != null'\'')]:EXPR:_default' \
+'-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
+'--check[Check formatting without modifying files; exit non-zero if any file needs formatting]' \
+'--sort-keys[Sort frontmatter keys alphabetically (recursively)]' \
+'--dry-run[Preview changes without writing files to disk]' \
+'--diff[Show unified diff of frontmatter formatting changes]' \
+'-l[Print only matching file paths, one per line (shorthand for --output files)]' \
+'--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'*::paths -- Files or directories to format (defaults to current directory '\''.'\''):_files' \
 && ret=0
 ;;
 (completions)
@@ -227,6 +287,18 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(keys)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(values)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(fmt)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (completions)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -260,7 +332,10 @@ _mdfm_commands() {
 'del:Delete one or more keys from frontmatter' \
 'mv:Rename or merge a frontmatter key across files' \
 'rename:Rename or merge a frontmatter key across files' \
-'check:Validate frontmatter against a JSON Schema' \
+'check:Validate frontmatter syntax and optionally against a JSON Schema' \
+'keys:Audit frontmatter keys, file counts, and observed types across files' \
+'values:Audit unique values and occurrence counts for a frontmatter key across files' \
+'fmt:Format and normalize frontmatter style (indentation, key/array sorting, YAML/TOML conversion)' \
 'completions:Generate shell completion scripts (bash, zsh, fish, powershell, elvish)' \
 'man:Generate UNIX roff man page' \
 'update:Check for and install the latest mdfm release from GitHub' \
@@ -283,6 +358,11 @@ _mdfm__subcmd__del_commands() {
     local commands; commands=()
     _describe -t commands 'mdfm del commands' commands "$@"
 }
+(( $+functions[_mdfm__subcmd__fmt_commands] )) ||
+_mdfm__subcmd__fmt_commands() {
+    local commands; commands=()
+    _describe -t commands 'mdfm fmt commands' commands "$@"
+}
 (( $+functions[_mdfm__subcmd__get_commands] )) ||
 _mdfm__subcmd__get_commands() {
     local commands; commands=()
@@ -295,7 +375,10 @@ _mdfm__subcmd__help_commands() {
 'set:Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)' \
 'del:Delete one or more keys from frontmatter' \
 'mv:Rename or merge a frontmatter key across files' \
-'check:Validate frontmatter against a JSON Schema' \
+'check:Validate frontmatter syntax and optionally against a JSON Schema' \
+'keys:Audit frontmatter keys, file counts, and observed types across files' \
+'values:Audit unique values and occurrence counts for a frontmatter key across files' \
+'fmt:Format and normalize frontmatter style (indentation, key/array sorting, YAML/TOML conversion)' \
 'completions:Generate shell completion scripts (bash, zsh, fish, powershell, elvish)' \
 'man:Generate UNIX roff man page' \
 'update:Check for and install the latest mdfm release from GitHub' \
@@ -318,6 +401,11 @@ _mdfm__subcmd__help__subcmd__del_commands() {
     local commands; commands=()
     _describe -t commands 'mdfm help del commands' commands "$@"
 }
+(( $+functions[_mdfm__subcmd__help__subcmd__fmt_commands] )) ||
+_mdfm__subcmd__help__subcmd__fmt_commands() {
+    local commands; commands=()
+    _describe -t commands 'mdfm help fmt commands' commands "$@"
+}
 (( $+functions[_mdfm__subcmd__help__subcmd__get_commands] )) ||
 _mdfm__subcmd__help__subcmd__get_commands() {
     local commands; commands=()
@@ -327,6 +415,11 @@ _mdfm__subcmd__help__subcmd__get_commands() {
 _mdfm__subcmd__help__subcmd__help_commands() {
     local commands; commands=()
     _describe -t commands 'mdfm help help commands' commands "$@"
+}
+(( $+functions[_mdfm__subcmd__help__subcmd__keys_commands] )) ||
+_mdfm__subcmd__help__subcmd__keys_commands() {
+    local commands; commands=()
+    _describe -t commands 'mdfm help keys commands' commands "$@"
 }
 (( $+functions[_mdfm__subcmd__help__subcmd__man_commands] )) ||
 _mdfm__subcmd__help__subcmd__man_commands() {
@@ -348,6 +441,16 @@ _mdfm__subcmd__help__subcmd__update_commands() {
     local commands; commands=()
     _describe -t commands 'mdfm help update commands' commands "$@"
 }
+(( $+functions[_mdfm__subcmd__help__subcmd__values_commands] )) ||
+_mdfm__subcmd__help__subcmd__values_commands() {
+    local commands; commands=()
+    _describe -t commands 'mdfm help values commands' commands "$@"
+}
+(( $+functions[_mdfm__subcmd__keys_commands] )) ||
+_mdfm__subcmd__keys_commands() {
+    local commands; commands=()
+    _describe -t commands 'mdfm keys commands' commands "$@"
+}
 (( $+functions[_mdfm__subcmd__man_commands] )) ||
 _mdfm__subcmd__man_commands() {
     local commands; commands=()
@@ -367,6 +470,11 @@ _mdfm__subcmd__set_commands() {
 _mdfm__subcmd__update_commands() {
     local commands; commands=()
     _describe -t commands 'mdfm update commands' commands "$@"
+}
+(( $+functions[_mdfm__subcmd__values_commands] )) ||
+_mdfm__subcmd__values_commands() {
+    local commands; commands=()
+    _describe -t commands 'mdfm values commands' commands "$@"
 }
 
 if [ "$funcstack[1]" = "_mdfm" ]; then

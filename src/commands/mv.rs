@@ -235,7 +235,7 @@ pub fn execute(
 
         let file_str = path.display().to_string();
         let (changed, diff_text) = if mutated {
-            let rendered = doc.render(Some(&fm))?;
+            let rendered = doc.render_with_options(Some(&fm), config.yaml_format_options())?;
             let bytes_changed = rendered != original;
             if bytes_changed && !options.dry_run {
                 fs::write(&path, &rendered)

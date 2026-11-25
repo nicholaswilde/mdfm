@@ -1,7 +1,10 @@
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
-use toml_edit::{Array, DocumentMut, InlineTable, Item, Table, TableLike, Value as TomlValue};
+use serde_yaml_ng::{Mapping as YamlMapping, Value as YamlValue};
+use toml_edit::{
+    Array, ArrayOfTables, DocumentMut, InlineTable, Item, Table, TableLike, Value as TomlValue,
+};
 
-use super::{split_key_path, Format, FrontmatterError};
+use super::{compare_json_values, split_key_path, yaml, Format, FrontmatterError};
 
 /// Parse TOML frontmatter text into a format-preserving `toml_edit::DocumentMut`.
 pub fn parse_toml(raw: &str) -> Result<DocumentMut, FrontmatterError> {
@@ -334,6 +337,235 @@ pub fn del(doc: &mut DocumentMut, path: &str) -> Result<bool, FrontmatterError> 
     Ok(removed)
 }
 
+/// Recursively sort all TOML table and inline-table keys alphabetically.
+///
+/// Keeps non-section entries before `[table]` / `[[array_of_tables]]` sections so output remains
+/// valid TOML.
+pub fn sort_keys(doc: &mut DocumentMut) {
+    let mut next_pos = 0usize;
+    sort_table(doc.as_table_mut(), &mut next_pos);
+}
+
+fn is_toml_section(item: &Item) -> bool {
+    matches!(item, Item::Table(_) | Item::ArrayOfTables(_))
+}
+
+fn sort_table(table: &mut Table, next_pos: &mut usize) {
+    table.sort_values_by(|k1, v1, k2, v2| {
+        is_toml_section(v1)
+            .cmp(&is_toml_section(v2))
+            .then_with(|| k1.get().cmp(k2.get()))
+    });
+    for (_, item) in table.iter_mut() {
+        match item {
+            Item::Table(sub) => {
+                *next_pos += 1;
+                sub.set_position(*next_pos);
+                sort_table(sub, next_pos);
+            }
+            Item::ArrayOfTables(aot) => {
+                for sub in aot.iter_mut() {
+                    *next_pos += 1;
+                    sub.set_position(*next_pos);
+                    sort_table(sub, next_pos);
+                }
+            }
+            Item::Value(val) => sort_toml_value(val),
+            Item::None => {}
+        }
+    }
+}
+
+fn sort_toml_value(val: &mut TomlValue) {
+    match val {
+        TomlValue::InlineTable(inline) => {
+            for (_, v) in inline.iter_mut() {
+                sort_toml_value(v);
+            }
+            inline.sort_values();
+        }
+        TomlValue::Array(arr) => {
+            for elem in arr.iter_mut() {
+                sort_toml_value(elem);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn sort_toml_array_in_place(arr: &mut Array) -> bool {
+    if arr.len() <= 1 {
+        return false;
+    }
+    let original_json: Vec<JsonValue> = arr.iter().map(toml_value_to_json).collect();
+    let mut paired: Vec<(JsonValue, TomlValue)> = original_json
+        .iter()
+        .cloned()
+        .zip(arr.iter().cloned())
+        .collect();
+    paired.sort_by(|(a, _), (b, _)| compare_json_values(a, b));
+
+    let mut deduped_vals: Vec<TomlValue> = Vec::with_capacity(paired.len());
+    let mut deduped_json: Vec<JsonValue> = Vec::with_capacity(paired.len());
+    for (j, v) in paired {
+        if deduped_json.last() != Some(&j) {
+            deduped_json.push(j);
+            deduped_vals.push(v);
+        }
+    }
+
+    if deduped_json == original_json {
+        return false;
+    }
+
+    let is_multiline = arr.iter().any(|v| {
+        v.decor()
+            .prefix()
+            .and_then(|p| p.as_str())
+            .is_some_and(|s| s.contains('\n'))
+    });
+    let first_prefix = arr
+        .get(0)
+        .and_then(|v| v.decor().prefix().and_then(|p| p.as_str()))
+        .map(str::to_string);
+    let next_prefix = arr
+        .get(1)
+        .and_then(|v| v.decor().prefix().and_then(|p| p.as_str()))
+        .map(str::to_string);
+    let old_decor = arr.decor().clone();
+    let trailing = arr.trailing().as_str().map(str::to_string);
+    let trailing_comma = arr.trailing_comma();
+
+    let mut rebuilt = Array::new();
+    for (idx, mut elem) in deduped_vals.into_iter().enumerate() {
+        elem.decor_mut().clear();
+        if is_multiline {
+            if idx == 0 {
+                if let Some(ref p) = first_prefix {
+                    elem.decor_mut().set_prefix(p.as_str());
+                }
+            } else if let Some(p) = next_prefix.as_ref().or(first_prefix.as_ref()) {
+                elem.decor_mut().set_prefix(p.as_str());
+            }
+            rebuilt.push_formatted(elem);
+        } else {
+            rebuilt.push(elem);
+        }
+    }
+    *rebuilt.decor_mut() = old_decor;
+    if is_multiline {
+        rebuilt.set_trailing_comma(trailing_comma);
+        if let Some(t) = trailing {
+            rebuilt.set_trailing(t);
+        }
+    }
+    *arr = rebuilt;
+    true
+}
+
+/// Sort and deduplicate a TOML array at `path`.
+///
+/// Missing keys or intermediate tables are treated as no-ops and return `Ok(false)`.
+pub fn sort_array(doc: &mut DocumentMut, path: &str) -> Result<bool, FrontmatterError> {
+    let segments = split_key_path(path)?;
+    let mut current = TableRef::Table(doc.as_table_mut());
+
+    for seg in &segments[..segments.len() - 1] {
+        current = match current {
+            TableRef::Table(tbl) => match tbl.get_mut(seg) {
+                None => return Ok(false),
+                Some(Item::Table(next)) => TableRef::Table(next),
+                Some(Item::Value(TomlValue::InlineTable(inline))) => TableRef::Inline(inline),
+                Some(_) => {
+                    return Err(FrontmatterError::NotAMapping {
+                        key: (*seg).to_string(),
+                        path: path.to_string(),
+                    });
+                }
+            },
+            TableRef::Inline(inline) => match inline.get_mut(seg) {
+                None => return Ok(false),
+                Some(TomlValue::InlineTable(next)) => TableRef::Inline(next),
+                Some(_) => {
+                    return Err(FrontmatterError::NotAMapping {
+                        key: (*seg).to_string(),
+                        path: path.to_string(),
+                    });
+                }
+            },
+        };
+    }
+
+    let last = segments[segments.len() - 1];
+    match current {
+        TableRef::Table(tbl) => match tbl.get_mut(last) {
+            None => Ok(false),
+            Some(Item::Value(TomlValue::Array(arr))) => Ok(sort_toml_array_in_place(arr)),
+            Some(_) => Err(FrontmatterError::NotAnArray {
+                path: path.to_string(),
+            }),
+        },
+        TableRef::Inline(inline) => match inline.get_mut(last) {
+            None => Ok(false),
+            Some(TomlValue::Array(arr)) => Ok(sort_toml_array_in_place(arr)),
+            Some(_) => Err(FrontmatterError::NotAnArray {
+                path: path.to_string(),
+            }),
+        },
+    }
+}
+
+/// Convert a YAML `Mapping` into a `toml_edit::DocumentMut`, preserving key order and emitting
+/// nested mappings as `[table]` sections and sequences of mappings as `[[array_of_tables]]`.
+pub fn from_yaml(mapping: &YamlMapping) -> Result<DocumentMut, FrontmatterError> {
+    let mut doc = DocumentMut::new();
+    populate_toml_table(doc.as_table_mut(), mapping)?;
+    Ok(doc)
+}
+
+fn is_yaml_array_of_mappings(val: &YamlValue) -> bool {
+    matches!(val, YamlValue::Sequence(seq) if !seq.is_empty() && seq.iter().all(|item| matches!(item, YamlValue::Mapping(_))))
+}
+
+fn populate_toml_table(table: &mut Table, mapping: &YamlMapping) -> Result<(), FrontmatterError> {
+    // Pass 1: scalar/array values before [table] / [[array_of_tables]] sections.
+    for (k, v) in mapping {
+        if matches!(v, YamlValue::Mapping(_)) || is_yaml_array_of_mappings(v) {
+            continue;
+        }
+        let key_str = yaml::yaml_key_to_string(k);
+        let json_val = yaml::yaml_to_json(v)?;
+        let toml_val = json_to_toml_value(&json_val)?;
+        table.insert(&key_str, toml_edit::value(toml_val));
+    }
+
+    // Pass 2: nested tables and arrays of tables.
+    for (k, v) in mapping {
+        let key_str = yaml::yaml_key_to_string(k);
+        match v {
+            YamlValue::Mapping(sub) => {
+                let mut child = Table::new();
+                populate_toml_table(&mut child, sub)?;
+                table.insert(&key_str, Item::Table(child));
+            }
+            YamlValue::Sequence(seq) if is_yaml_array_of_mappings(v) => {
+                let mut aot = ArrayOfTables::new();
+                for item in seq {
+                    if let YamlValue::Mapping(sub) = item {
+                        let mut child = Table::new();
+                        populate_toml_table(&mut child, sub)?;
+                        aot.push(child);
+                    }
+                }
+                table.insert(&key_str, Item::ArrayOfTables(aot));
+            }
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
 /// Convert a `toml_edit::DocumentMut` into a `serde_json::Value::Object`.
 pub fn document_to_json(doc: &DocumentMut) -> Result<JsonValue, FrontmatterError> {
     Ok(table_to_json(doc.as_table()))
@@ -589,5 +821,46 @@ inline_meta = { labels = [\"a\"] }
             append(&mut doc, "tags", &[json!(null)]),
             Err(FrontmatterError::UnsupportedValue { .. })
         ));
+    }
+
+    #[test]
+    fn toml_sort_keys_sort_array_and_yaml_conversion() {
+        let yaml_map = yaml::parse_yaml(
+            "title: Guide\ntags:\n  - rust\n  - cli\nauthor:\n  name: Nick\nitems:\n  - id: 1\n  - id: 2\n",
+        )
+        .unwrap();
+        let toml_doc = from_yaml(&yaml_map).unwrap();
+        let toml_str = serialize_toml(&toml_doc);
+        assert!(toml_str.contains("title = \"Guide\""));
+        assert!(toml_str.contains("[author]"));
+        assert!(toml_str.contains("[[items]]"));
+        let back_yaml = yaml::from_toml(&toml_doc);
+        assert_eq!(
+            yaml::mapping_to_json(&back_yaml).unwrap(),
+            yaml::mapping_to_json(&yaml_map).unwrap()
+        );
+
+        let mut doc = parse_toml(
+            "z = 1\na = 2\nnums = [10, 2, 10, 1]\ninline = { b = 2, a = 1, arr = [\"z\", \"a\", \"z\"] }\n[z_sec]\nb = 2\na = 1\n[a_sec]\ny = 2\nx = 1\n",
+        )
+        .unwrap();
+        assert!(sort_array(&mut doc, "nums").unwrap());
+        assert!(!sort_array(&mut doc, "nums").unwrap());
+        assert!(sort_array(&mut doc, "inline.arr").unwrap());
+        assert!(!sort_array(&mut doc, "missing.path").unwrap());
+        assert_eq!(get(&doc, "nums"), Some(json!([1, 2, 10])));
+        assert_eq!(get(&doc, "inline.arr"), Some(json!(["a", "z"])));
+
+        sort_keys(&mut doc);
+        let rendered = serialize_toml(&doc);
+        assert!(rendered.find("a = 2").unwrap() < rendered.find("z = 1").unwrap());
+        let a_sec_pos = rendered.find("[a_sec]").unwrap();
+        let z_sec_pos = rendered.find("[z_sec]").unwrap();
+        assert!(a_sec_pos < z_sec_pos);
+        let z_sec_body = &rendered[z_sec_pos..];
+        assert!(z_sec_body.find("a = 1").unwrap() < z_sec_body.find("b = 2").unwrap());
+        let reparsed = parse_toml(&rendered).unwrap();
+        assert_eq!(get(&reparsed, "a_sec.x"), Some(json!(1)));
+        assert_eq!(get(&reparsed, "z_sec.a"), Some(json!(1)));
     }
 }

@@ -16,6 +16,16 @@ pub enum OutputFormat {
     Files,
 }
 
+/// Sort order for taxonomy audit subcommands (`keys`, `values`).
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum AuditSort {
+    /// Sort by count descending, then alphabetically ascending
+    #[default]
+    Count,
+    /// Sort alphabetically ascending
+    Alpha,
+}
+
 #[derive(Parser, Debug, Clone)]
 #[command(name = "mdfm")]
 #[command(
@@ -127,7 +137,7 @@ pub enum Commands {
         #[arg(long)]
         diff: bool,
     },
-    /// Validate frontmatter against a JSON Schema
+    /// Validate frontmatter syntax and optionally against a JSON Schema
     Check {
         /// Files or directories to validate (defaults to current directory '.')
         paths: Vec<PathBuf>,
@@ -137,6 +147,59 @@ pub enum Commands {
         /// Show only validation failures and a compact summary line
         #[arg(short = 'q', long = "errors-only", visible_alias = "quiet")]
         errors_only: bool,
+        /// Validate YAML/TOML frontmatter syntax only (bypasses any configured JSON Schema)
+        #[arg(long)]
+        syntax_only: bool,
+    },
+    /// Audit frontmatter keys, file counts, and observed types across files
+    Keys {
+        /// Files or directories to inspect (defaults to current directory '.')
+        paths: Vec<PathBuf>,
+        /// Sort order for keys (count descending or alphabetical)
+        #[arg(long, value_enum, default_value_t = AuditSort::Count)]
+        sort: AuditSort,
+    },
+    /// Audit unique values and occurrence counts for a frontmatter key across files
+    Values {
+        /// Dot-separated frontmatter key path to audit (e.g. tags, author.role)
+        key: String,
+        /// Files or directories to inspect (defaults to current directory '.')
+        paths: Vec<PathBuf>,
+        /// Do not flatten array values into individual elements
+        #[arg(long)]
+        no_flatten: bool,
+        /// Sort order for values (count descending or alphabetical)
+        #[arg(long, value_enum, default_value_t = AuditSort::Count)]
+        sort: AuditSort,
+    },
+    /// Format and normalize frontmatter style (indentation, key/array sorting, YAML/TOML conversion)
+    Fmt {
+        /// Files or directories to format (defaults to current directory '.')
+        paths: Vec<PathBuf>,
+        /// Check formatting without modifying files; exit non-zero if any file needs formatting
+        #[arg(long)]
+        check: bool,
+        /// Sort frontmatter keys alphabetically (recursively)
+        #[arg(long)]
+        sort_keys: bool,
+        /// Sort and deduplicate array values at the given key path(s) (repeatable or comma-separated)
+        #[arg(long = "sort-array", value_name = "KEY", value_delimiter = ',')]
+        sort_array: Vec<String>,
+        /// Convert frontmatter to the target format (yaml or toml)
+        #[arg(long = "to", value_name = "FORMAT")]
+        to: Option<Format>,
+        /// Indent YAML sequence items under their parent key (true or false)
+        #[arg(long, value_name = "BOOL")]
+        indent_sequences: Option<bool>,
+        /// Number of spaces per YAML indentation level (default: 2)
+        #[arg(long, value_name = "SPACES")]
+        yaml_indent: Option<usize>,
+        /// Preview changes without writing files to disk
+        #[arg(long)]
+        dry_run: bool,
+        /// Show unified diff of frontmatter formatting changes
+        #[arg(long)]
+        diff: bool,
     },
     /// Generate shell completion scripts (bash, zsh, fish, powershell, elvish)
     Completions {
