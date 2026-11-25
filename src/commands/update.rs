@@ -321,6 +321,7 @@ mod tests {
 
     #[test]
     fn cli_update_parsing() {
+        let _lock = crate::config::tests::lock_env();
         use crate::cli::{Cli, Commands};
 
         let cli = Cli::try_parse_from(["mdfm", "update"]).unwrap();

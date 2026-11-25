@@ -178,6 +178,7 @@ mod tests {
 
     #[test]
     fn cli_parses_global_flags_and_subcommands() {
+        let _lock = crate::config::tests::lock_env();
         let cli = Cli::try_parse_from([
             "mdfm",
             "--format",
@@ -219,6 +220,7 @@ mod tests {
 
     #[test]
     fn cli_parses_set_del_check() {
+        let _lock = crate::config::tests::lock_env();
         let set_cli = Cli::try_parse_from([
             "mdfm",
             "set",
@@ -426,6 +428,7 @@ mod tests {
 
     #[test]
     fn cli_generates_completions_for_all_shells() {
+        let _lock = crate::config::tests::lock_env();
         for shell in ["bash", "zsh", "fish", "powershell", "elvish"] {
             let cli = Cli::try_parse_from(["mdfm", "completions", shell]).unwrap();
             let mut buf = Vec::new();
@@ -440,6 +443,7 @@ mod tests {
 
     #[test]
     fn cli_generates_manpage() {
+        let _lock = crate::config::tests::lock_env();
         let cli = Cli::try_parse_from(["mdfm", "man"]).unwrap();
         assert!(matches!(cli.command, Commands::Man));
         let mut buf = Vec::new();

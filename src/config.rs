@@ -523,12 +523,18 @@ pub fn resolve_configuration_from_dir(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use std::ffi::OsString;
-    use std::sync::Mutex;
+    use std::sync::{Mutex, MutexGuard};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Serialize tests that read or mutate process-wide `MDFM_*` / XDG environment variables
+    /// (including `Cli::try_parse_from`, which reads `clap` `env = "MDFM_*"` bindings).
+    pub(crate) fn lock_env() -> MutexGuard<'static, ()> {
+        ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     struct EnvGuard {
         saved: Vec<(&'static str, Option<OsString>)>,
@@ -682,7 +688,7 @@ errors_only = true
 
     #[test]
     fn explicit_config_and_cli_precedence() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = lock_env();
         let env = EnvGuard::new(&[
             "MDFM_CONFIG",
             "MDFM_FORMAT",
@@ -815,7 +821,7 @@ errors_only = true
 
     #[test]
     fn env_vars_and_global_config_resolution() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = lock_env();
         let env = EnvGuard::new(&[
             "MDFM_CONFIG",
             "MDFM_FORMAT",
@@ -937,7 +943,7 @@ errors_only = true
 
     #[test]
     fn resolve_per_glob_schemas_and_cli_override() {
-        let _lock = ENV_LOCK.lock().unwrap();
+        let _lock = lock_env();
         let env = EnvGuard::new(&["MDFM_CONFIG", "MDFM_SCHEMA", "XDG_CONFIG_HOME"]);
         env.remove("MDFM_CONFIG");
         env.remove("MDFM_SCHEMA");
