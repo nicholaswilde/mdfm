@@ -204,7 +204,7 @@ mdfm --where 'not draft' check --schema publish-schema.json posts/
 ```
 
 !!! tip
-    Bare key paths evaluate as falsy when missing, `null`, `false`, `0`, `""`, `[]`, or `{}`. Inequality (`!=`) evaluates to `true` when the referenced key is absent. Use `has_frontmatter` or `frontmatter_format` (`"yaml"`, `"toml"`, or `null`) to target files without frontmatter; quote `"has_frontmatter"` if querying a literal frontmatter key with that name.
+    Bare key paths evaluate as falsy when missing, `null`, `false`, `0`, `""`, `[]`, or `{}`. Missing keys are treated as `null` in equality (`==`) and inequality (`!=`) comparisons (`key == null` matches absent keys, `key != null` requires a present non-null value, and `draft != true` still matches when `draft` is absent). Use `has_frontmatter` or `frontmatter_format` (`"yaml"`, `"toml"`, or `null`) to target files without frontmatter; quote `"has_frontmatter"` if querying a literal frontmatter key with that name.
 
 ## :white_check_mark: Schema & Syntax Validation (`check`)
 

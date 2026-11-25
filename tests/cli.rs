@@ -1811,3 +1811,55 @@ fn cli_fmt_subcommand_yaml_indent_sort_convert_and_shared_set_del_indent() {
         "---\ntags:\n  - baking\n  - dessert\n  - featured\n---\n\n# Cake Body\n"
     );
 }
+
+#[test]
+fn cli_where_missing_key_null_comparisons() {
+    let tmp = tempfile::tempdir().unwrap();
+    fs::write(tmp.path().join("missing.md"), "---\ntitle: A\n---\n").unwrap();
+    fs::write(
+        tmp.path().join("explicit-null.md"),
+        "---\ntitle: B\ncook_time: null\nprep time: null\n---\n",
+    )
+    .unwrap();
+    fs::write(
+        tmp.path().join("present.md"),
+        "---\ntitle: C\ncook_time: 10m\nprep time: 5m\n---\n",
+    )
+    .unwrap();
+    fs::write(tmp.path().join("body-only.md"), "# No frontmatter\n").unwrap();
+
+    let run_list = |expr: &str| -> Option<Vec<String>> {
+        let mut cmd = mdfm_cmd()?;
+        let out = cmd
+            .args(["--where", expr, "-l", "get", "."])
+            .arg(tmp.path())
+            .assert()
+            .success()
+            .get_output()
+            .stdout
+            .clone();
+        let mut names: Vec<String> = String::from_utf8(out)
+            .unwrap()
+            .lines()
+            .filter_map(|line| {
+                std::path::Path::new(line)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+            })
+            .collect();
+        names.sort();
+        Some(names)
+    };
+
+    let Some(eq_null) = run_list("cook_time == null") else {
+        return;
+    };
+    assert_eq!(eq_null, vec!["explicit-null.md", "missing.md"]);
+
+    assert_eq!(run_list("cook_time != null").unwrap(), vec!["present.md"]);
+    assert_eq!(run_list("`prep time` != null").unwrap(), vec!["present.md"]);
+    assert_eq!(
+        run_list(r#"cook_time != "10m""#).unwrap(),
+        vec!["explicit-null.md", "missing.md"]
+    );
+}

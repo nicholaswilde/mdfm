@@ -239,11 +239,8 @@ fn compare_order(a: &JsonValue, b: &JsonValue) -> Option<std::cmp::Ordering> {
 
 fn evaluate_compare(actual: Option<&JsonValue>, op: CompareOp, expected: &JsonValue) -> bool {
     match op {
-        CompareOp::Eq => actual.is_some_and(|a| json_values_equal(a, expected)),
-        CompareOp::Ne => match actual {
-            Some(a) => !json_values_equal(a, expected),
-            None => true,
-        },
+        CompareOp::Eq => json_values_equal(actual.unwrap_or(&JsonValue::Null), expected),
+        CompareOp::Ne => !json_values_equal(actual.unwrap_or(&JsonValue::Null), expected),
         CompareOp::Gt => actual
             .and_then(|a| compare_order(a, expected))
             .is_some_and(|o| o.is_gt()),
@@ -1128,5 +1125,101 @@ mod tests {
         assert!(!quoted.references_document_meta());
         assert!(quoted.matches_doc(yaml_ctx));
         assert!(!quoted.matches_doc(body_only));
+    }
+
+    #[test]
+    fn filter_missing_key_null_comparisons() {
+        let missing = json!({ "title": "A" });
+        let explicit_null = json!({ "title": "B", "cook_time": null, "prep time": null });
+        let present = json!({ "title": "C", "cook_time": "10m", "prep time": "5m" });
+        let empty = json!({});
+
+        // Missing keys compare equal to `null` and unequal to non-null values.
+        assert!(FilterExpr::parse("cook_time == null")
+            .unwrap()
+            .matches(&missing));
+        assert!(!FilterExpr::parse("cook_time != null")
+            .unwrap()
+            .matches(&missing));
+        assert!(!FilterExpr::parse(r#"cook_time == "10m""#)
+            .unwrap()
+            .matches(&missing));
+        assert!(FilterExpr::parse(r#"cook_time != "10m""#)
+            .unwrap()
+            .matches(&missing));
+        assert!(FilterExpr::parse("draft != true")
+            .unwrap()
+            .matches(&missing));
+        assert!(!FilterExpr::parse("draft == false")
+            .unwrap()
+            .matches(&missing));
+        assert!(!FilterExpr::parse("cook_time").unwrap().matches(&missing));
+        assert!(FilterExpr::parse("not cook_time")
+            .unwrap()
+            .matches(&missing));
+
+        // Explicit `null` behaves identically to missing keys for `==` / `!=`.
+        assert!(FilterExpr::parse("cook_time == null")
+            .unwrap()
+            .matches(&explicit_null));
+        assert!(!FilterExpr::parse("cook_time != null")
+            .unwrap()
+            .matches(&explicit_null));
+        assert!(FilterExpr::parse(r#"cook_time != "10m""#)
+            .unwrap()
+            .matches(&explicit_null));
+
+        // Present non-null values match `!= null` and fail `== null`.
+        assert!(!FilterExpr::parse("cook_time == null")
+            .unwrap()
+            .matches(&present));
+        assert!(FilterExpr::parse("cook_time != null")
+            .unwrap()
+            .matches(&present));
+
+        // Quoted, backticked, bracketed, and nested missing paths.
+        assert!(!FilterExpr::parse("`prep time` != null")
+            .unwrap()
+            .matches(&missing));
+        assert!(FilterExpr::parse("`prep time` == null")
+            .unwrap()
+            .matches(&missing));
+        assert!(!FilterExpr::parse(r#""prep time" != null"#)
+            .unwrap()
+            .matches(&explicit_null));
+        assert!(FilterExpr::parse("`prep time` != null")
+            .unwrap()
+            .matches(&present));
+        assert!(FilterExpr::parse("meta.cook_time == null")
+            .unwrap()
+            .matches(&missing));
+        assert!(!FilterExpr::parse("meta.cook_time != null")
+            .unwrap()
+            .matches(&missing));
+
+        // Empty frontmatter matches `== null` / `!= true`, whereas body-only files remain skipped.
+        let empty_ctx = FilterContext {
+            frontmatter: Some(&empty),
+            format: Some(Format::Yaml),
+        };
+        let body_only = FilterContext {
+            frontmatter: None,
+            format: None,
+        };
+        assert!(FilterExpr::parse("cook_time == null")
+            .unwrap()
+            .matches_doc(empty_ctx));
+        assert!(!FilterExpr::parse("cook_time != null")
+            .unwrap()
+            .matches_doc(empty_ctx));
+        assert!(FilterExpr::parse("draft != true")
+            .unwrap()
+            .matches_doc(empty_ctx));
+        assert!(!FilterExpr::parse("cook_time == null")
+            .unwrap()
+            .matches_doc(body_only));
+        assert!(!FilterExpr::parse("cook_time != null")
+            .unwrap()
+            .matches_doc(body_only));
     }
 }
