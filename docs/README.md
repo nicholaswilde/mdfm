@@ -33,6 +33,8 @@ scoop install nicholaswilde/mdfm
 cargo install --git https://github.com/nicholaswilde/mdfm
 ```
 
+Debian/Ubuntu `.deb` packages are also published via [`nicholaswilde/apt`](https://nicholaswilde.io/apt) — see [Installation](https://nicholaswilde.io/mdfm/installation/).
+
 ### :gear:&nbsp; Usage
 
 ```bash
@@ -66,6 +68,24 @@ mdfm check --schema .mdfm-schema.json posts/
 5. Built-in defaults
 
 See [assets/config.example.toml](../assets/config.example.toml) for all supported options.
+
+---
+
+## :book:&nbsp; Documentation
+
+Documentation can be found on the [mdfm documentation site](https://nicholaswilde.io/mdfm).
+
+---
+
+## :star:&nbsp; Contributing
+
+See [Contributing](https://nicholaswilde.io/mdfm/CONTRIBUTING/).
+
+---
+
+## :sparkles:&nbsp; Code of Conduct
+
+See [Code of Conduct](https://nicholaswilde.io/mdfm/CODE_OF_CONDUCT/).
 
 ---
 

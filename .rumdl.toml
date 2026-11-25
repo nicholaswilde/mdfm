@@ -26,3 +26,10 @@ indent = 2
 
 [MD024]
 siblings-only = true
+
+[per-file-flavor]
+"docs/**/*.md" = "mkdocs"
+
+[per-file-ignores]
+# Zensical/MkDocs strips :emoji: shortcodes from heading anchor slugs
+"docs/**/*.md" = ["MD051"]
