@@ -249,7 +249,10 @@ fn cli_set_creates_frontmatter_when_absent() {
         mdfm::frontmatter::split(&orig_content).line_ending
     );
     assert!(updated.starts_with(&format!("+++{}", doc.line_ending.as_str())));
-    assert_eq!(doc.body, orig_content);
+    assert_eq!(
+        doc.body,
+        format!("{}{orig_content}", doc.line_ending.as_str())
+    );
     let fm = doc.parse_frontmatter().unwrap().unwrap();
     assert_eq!(fm.get("title"), Some(serde_json::json!("Created")));
     assert_eq!(fm.get("draft"), Some(serde_json::json!(false)));
@@ -288,7 +291,10 @@ fn cli_set_preserves_crlf_line_endings() {
     let updated_plain = fs::read_to_string(&plain_file).unwrap();
     assert!(updated_plain.starts_with("+++\r\n"));
     assert!(updated_plain.contains("title = \"Created\"\r\n"));
-    assert_eq!(mdfm::frontmatter::split(&updated_plain).body, plain_orig);
+    assert_eq!(
+        mdfm::frontmatter::split(&updated_plain).body,
+        format!("\r\n{plain_orig}")
+    );
 }
 
 #[test]
@@ -617,4 +623,354 @@ fn cli_env_vars_global_config_completions_and_table_outputs() {
         .success()
         .stdout(predicate::str::contains(".TH mdfm"))
         .stdout(predicate::str::contains(".SH SYNOPSIS"));
+}
+
+#[test]
+fn cli_del_preserves_yaml_key_order() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("recipe.md");
+    let orig = "\
+---
+source: Recipe Box
+servings: 1
+prep time: 5 minutes
+cook time: 0 minutes
+total time: 5 minutes
+hero: assets/images/fireside-special.webp
+---
+
+# Recipe
+";
+    fs::write(&file, orig).unwrap();
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["del", "prep time"]).arg(&file).assert().success();
+
+    let updated = fs::read_to_string(&file).unwrap();
+    let expected = "\
+---
+source: Recipe Box
+servings: 1
+cook time: 0 minutes
+total time: 5 minutes
+hero: assets/images/fireside-special.webp
+---
+
+# Recipe
+";
+    assert_eq!(updated, expected);
+}
+
+#[test]
+fn cli_set_new_frontmatter_blank_line_spacing() {
+    let tmp = tempfile::tempdir().unwrap();
+
+    let heading_file = tmp.path().join("nofm.md");
+    fs::write(&heading_file, "# Heading\n\nBody text.\n").unwrap();
+
+    let spaced_file = tmp.path().join("spaced.md");
+    fs::write(&spaced_file, "\n# Already Spaced\n").unwrap();
+
+    let empty_file = tmp.path().join("empty.md");
+    fs::write(&empty_file, "").unwrap();
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["set", "comments=true"])
+        .arg(tmp.path())
+        .assert()
+        .success();
+
+    assert_eq!(
+        fs::read_to_string(&heading_file).unwrap(),
+        "---\ncomments: true\n---\n\n# Heading\n\nBody text.\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&spaced_file).unwrap(),
+        "---\ncomments: true\n---\n\n# Already Spaced\n"
+    );
+    assert_eq!(
+        fs::read_to_string(&empty_file).unwrap(),
+        "---\ncomments: true\n---\n"
+    );
+}
+
+#[test]
+fn cli_set_skips_write_when_semantically_unchanged() {
+    let tmp = tempfile::tempdir().unwrap();
+    let file = tmp.path().join("indented.md");
+    let orig = "\
+---
+title: Savory Star Bread
+comments: true
+
+tags:
+  - bread
+  - must-try
+---
+
+# Body
+";
+    fs::write(&file, orig).unwrap();
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["--output", "plain", "set", "comments=true"])
+        .arg(&file)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\tunchanged"));
+
+    assert_eq!(fs::read_to_string(&file).unwrap(), orig);
+}
+
+#[test]
+fn cli_set_array_append_and_remove_yaml_and_toml() {
+    let tmp = tempfile::tempdir().unwrap();
+    let yaml_file = tmp.path().join("bread.md");
+    let yaml_orig = "\
+---
+title: Savory Star Bread
+tags:
+  - bread
+  - applied-kitchen
+  - draft
+---
+
+# Savory Star Bread
+";
+    fs::write(&yaml_file, yaml_orig).unwrap();
+
+    let toml_file = tmp.path().join("guide.md");
+    let toml_orig = "\
++++
+title = \"CLI Guide\"
+tags = [\"rust\", \"draft\"] # inline comment
++++
+
+# CLI Guide
+";
+    fs::write(&toml_file, toml_orig).unwrap();
+
+    let plain_file = tmp.path().join("notes.md");
+    fs::write(&plain_file, "# Plain Notes\n").unwrap();
+
+    // Append duplicate tag is a no-op preserving original 2-space YAML formatting.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["--output", "plain", "set", "tags+=bread"])
+        .arg(&yaml_file)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\tunchanged"));
+    assert_eq!(fs::read_to_string(&yaml_file).unwrap(), yaml_orig);
+
+    // Filtered append: --where 'tags contains "applied-kitchen"' set tags+=featured
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args([
+        "--where",
+        "tags contains \"applied-kitchen\"",
+        "set",
+        "tags+=featured",
+        r#"tags+=["must-try","featured"]"#,
+    ])
+    .arg(tmp.path())
+    .assert()
+    .success();
+
+    let yaml_doc_str = fs::read_to_string(&yaml_file).unwrap();
+    let yaml_fm = mdfm::frontmatter::split(&yaml_doc_str)
+        .parse_frontmatter()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        yaml_fm.get("tags"),
+        Some(serde_json::json!([
+            "bread",
+            "applied-kitchen",
+            "draft",
+            "featured",
+            "must-try"
+        ]))
+    );
+    // Unmatched TOML and body-only files were untouched.
+    assert_eq!(fs::read_to_string(&toml_file).unwrap(), toml_orig);
+    assert_eq!(fs::read_to_string(&plain_file).unwrap(), "# Plain Notes\n");
+
+    // Bulk remove across directory removes "draft" from YAML + TOML and leaves plain file body-only.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["set", "tags-=draft", "tags+=v1"])
+        .arg(&toml_file)
+        .assert()
+        .success();
+
+    let toml_updated = fs::read_to_string(&toml_file).unwrap();
+    assert!(toml_updated.contains("# inline comment"));
+    let toml_fm = mdfm::frontmatter::split(&toml_updated)
+        .parse_frontmatter()
+        .unwrap()
+        .unwrap();
+    assert_eq!(toml_fm.get("tags"), Some(serde_json::json!(["rust", "v1"])));
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["set", "tags-=draft"])
+        .arg(tmp.path())
+        .assert()
+        .success();
+    assert_eq!(fs::read_to_string(&plain_file).unwrap(), "# Plain Notes\n");
+    let yaml_after_rm = fs::read_to_string(&yaml_file).unwrap();
+    let yaml_fm_after = mdfm::frontmatter::split(&yaml_after_rm)
+        .parse_frontmatter()
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        yaml_fm_after.get("tags"),
+        Some(serde_json::json!([
+            "bread",
+            "applied-kitchen",
+            "featured",
+            "must-try"
+        ]))
+    );
+
+    // Non-array key fails loudly.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["set", "title+=nope"])
+        .arg(&yaml_file)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("is not an array"));
+}
+
+#[test]
+fn cli_where_keys_with_spaces_and_brackets() {
+    let tmp = tempfile::tempdir().unwrap();
+    let yaml_recipe = tmp.path().join("bread.md");
+    let toml_recipe = tmp.path().join("toast.md");
+    let null_recipe = tmp.path().join("note.md");
+
+    fs::write(
+        &yaml_recipe,
+        "---\ntitle: Savory Star Bread\nprep time: \"10 minutes\"\ncook time: \"25 minutes\"\ntags:\n  - bread\n  - baking\nmeta:\n  prep time: \"5 minutes\"\n  v1.2: true\n---\n\n# Bread\n",
+    )
+    .unwrap();
+    fs::write(
+        &toml_recipe,
+        "+++\ntitle = \"Quick Toast\"\n\"prep time\" = \"2 minutes\"\ntags = [\"fast\"]\n\n[meta]\n\"prep time\" = \"2 minutes\"\n+++\n\n# Toast\n",
+    )
+    .unwrap();
+    fs::write(
+        &null_recipe,
+        "---\ntitle: Plain Note\nprep time: null\n---\n\n# Note\n",
+    )
+    .unwrap();
+
+    // Quoted LHS key with spaces (`"prep time" != null`).
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args([
+            "--output",
+            "json",
+            "--where",
+            r#""prep time" != null"#,
+            "get",
+            "title",
+        ])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let entries: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+    assert_eq!(entries.len(), 2);
+
+    // Backtick-quoted key with spaces.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args([
+            "--output",
+            "json",
+            "--where",
+            r#"`prep time` == "10 minutes""#,
+            "get",
+            "title",
+        ])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let entries: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["value"], "Savory Star Bread");
+
+    // Dotted + bracketed key with spaces on TOML file.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args([
+            "--output",
+            "json",
+            "--where",
+            r#"meta["prep time"] == "2 minutes""#,
+            "get",
+            "title",
+        ])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let entries: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["value"], "Quick Toast");
+
+    // Root bracket key + literal dot key inside brackets.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args([
+            "--output",
+            "json",
+            "--where",
+            r#"["cook time"] == "25 minutes" and meta["v1.2"] == true"#,
+            "get",
+            "title",
+        ])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let entries: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["value"], "Savory Star Bread");
+
+    // Bracket array index.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args([
+            "--output",
+            "json",
+            "--where",
+            r#"tags[0] == "fast""#,
+            "get",
+            "title",
+        ])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let entries: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["value"], "Quick Toast");
+
+    // Unclosed bracket errors clearly.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["--where", r#"meta["prep time""#, "get", "title"])
+        .arg(&yaml_recipe)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Invalid --where expression"));
 }

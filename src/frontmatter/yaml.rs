@@ -52,12 +52,13 @@ pub fn get(mapping: &Mapping, path: &str) -> Option<JsonValue> {
     yaml_to_json(current).ok()
 }
 
-/// Insert or update a dot-separated key path in a YAML mapping.
-pub fn set(mapping: &mut Mapping, path: &str, value: JsonValue) -> Result<(), FrontmatterError> {
-    let segments = split_key_path(path)?;
+fn ensure_parent_mapping<'a>(
+    mapping: &'a mut Mapping,
+    parent_segments: &[&str],
+    full_path: &str,
+) -> Result<&'a mut Mapping, FrontmatterError> {
     let mut current = mapping;
-
-    for seg in &segments[..segments.len() - 1] {
+    for seg in parent_segments {
         let key = YamlValue::String((*seg).to_string());
         if !current.contains_key(&key) {
             current.insert(key.clone(), YamlValue::Mapping(Mapping::new()));
@@ -65,10 +66,89 @@ pub fn set(mapping: &mut Mapping, path: &str, value: JsonValue) -> Result<(), Fr
 
         let entry = current.get_mut(&key).expect("key was just ensured");
         match entry {
-            YamlValue::Mapping(next_map) => {
-                current = next_map;
-            }
+            YamlValue::Mapping(next_map) => current = next_map,
             _ => {
+                return Err(FrontmatterError::NotAMapping {
+                    key: (*seg).to_string(),
+                    path: full_path.to_string(),
+                });
+            }
+        }
+    }
+    Ok(current)
+}
+
+/// Insert or update a dot-separated key path in a YAML mapping.
+pub fn set(mapping: &mut Mapping, path: &str, value: JsonValue) -> Result<(), FrontmatterError> {
+    let segments = split_key_path(path)?;
+    let current = ensure_parent_mapping(mapping, &segments[..segments.len() - 1], path)?;
+
+    let last = segments[segments.len() - 1];
+    current.insert(YamlValue::String(last.to_string()), json_to_yaml(&value));
+    Ok(())
+}
+
+/// Append item(s) to a YAML sequence at `path`, deduplicating existing entries.
+///
+/// Creates intermediate mappings and a new sequence if the target key is absent.
+pub fn append(
+    mapping: &mut Mapping,
+    path: &str,
+    items: &[JsonValue],
+) -> Result<(), FrontmatterError> {
+    let segments = split_key_path(path)?;
+    let current = ensure_parent_mapping(mapping, &segments[..segments.len() - 1], path)?;
+
+    let last_key = YamlValue::String(segments[segments.len() - 1].to_string());
+    match current.get_mut(&last_key) {
+        Some(YamlValue::Sequence(seq)) => {
+            let mut existing: Vec<JsonValue> = seq
+                .iter()
+                .map(yaml_to_json)
+                .collect::<Result<Vec<_>, _>>()?;
+            for item in items {
+                if !existing.iter().any(|e| e == item) {
+                    seq.push(json_to_yaml(item));
+                    existing.push(item.clone());
+                }
+            }
+            Ok(())
+        }
+        Some(_) => Err(FrontmatterError::NotAnArray {
+            path: path.to_string(),
+        }),
+        None => {
+            let mut seq = Vec::with_capacity(items.len());
+            let mut seen: Vec<&JsonValue> = Vec::with_capacity(items.len());
+            for item in items {
+                if !seen.contains(&item) {
+                    seq.push(json_to_yaml(item));
+                    seen.push(item);
+                }
+            }
+            current.insert(last_key, YamlValue::Sequence(seq));
+            Ok(())
+        }
+    }
+}
+
+/// Remove matching item(s) from a YAML sequence at `path`.
+///
+/// Missing intermediate mappings or target keys are treated as no-ops.
+pub fn remove_from_array(
+    mapping: &mut Mapping,
+    path: &str,
+    items: &[JsonValue],
+) -> Result<(), FrontmatterError> {
+    let segments = split_key_path(path)?;
+    let mut current = mapping;
+
+    for seg in &segments[..segments.len() - 1] {
+        let key = YamlValue::String((*seg).to_string());
+        match current.get_mut(&key) {
+            Some(YamlValue::Mapping(next_map)) => current = next_map,
+            None => return Ok(()),
+            Some(_) => {
                 return Err(FrontmatterError::NotAMapping {
                     key: (*seg).to_string(),
                     path: path.to_string(),
@@ -77,9 +157,24 @@ pub fn set(mapping: &mut Mapping, path: &str, value: JsonValue) -> Result<(), Fr
         }
     }
 
-    let last = segments[segments.len() - 1];
-    current.insert(YamlValue::String(last.to_string()), json_to_yaml(&value));
-    Ok(())
+    let last_key = YamlValue::String(segments[segments.len() - 1].to_string());
+    match current.get_mut(&last_key) {
+        None => Ok(()),
+        Some(YamlValue::Sequence(seq)) => {
+            let mut kept = Vec::with_capacity(seq.len());
+            for elem in seq.drain(..) {
+                let elem_json = yaml_to_json(&elem)?;
+                if !items.iter().any(|target| target == &elem_json) {
+                    kept.push(elem);
+                }
+            }
+            *seq = kept;
+            Ok(())
+        }
+        Some(_) => Err(FrontmatterError::NotAnArray {
+            path: path.to_string(),
+        }),
+    }
 }
 
 /// Delete a dot-separated key path from a YAML mapping.
@@ -99,7 +194,7 @@ pub fn del(mapping: &mut Mapping, path: &str) -> Result<bool, FrontmatterError> 
 
     let last = segments[segments.len() - 1];
     Ok(current
-        .remove(YamlValue::String(last.to_string()))
+        .shift_remove(YamlValue::String(last.to_string()))
         .is_some())
 }
 
@@ -270,5 +365,110 @@ scalar: text
         assert_eq!(get(&map, "complex.u"), Some(json!(u64::MAX)));
         assert_eq!(get(&map, "complex.f"), Some(json!(2.75)));
         assert_eq!(get(&map, "complex.arr.2"), Some(json!("s")));
+    }
+
+    #[test]
+    fn yaml_del_preserves_key_order() {
+        let raw = "\
+source: Recipe Box
+servings: 1
+prep time: 5 minutes
+cook time: 0 minutes
+total time: 5 minutes
+meta:
+  first: 1
+  second: 2
+  third: 3
+hero: assets/images/fireside-special.webp
+";
+        let mut map = parse_yaml(raw).unwrap();
+        assert!(del(&mut map, "prep time").unwrap());
+        assert!(del(&mut map, "meta.second").unwrap());
+
+        let serialized = serialize_yaml(&map).unwrap();
+        let keys: Vec<&str> = map
+            .keys()
+            .map(|k| k.as_str().expect("string key"))
+            .collect();
+        assert_eq!(
+            keys,
+            vec![
+                "source",
+                "servings",
+                "cook time",
+                "total time",
+                "meta",
+                "hero"
+            ]
+        );
+
+        let expected = "\
+source: Recipe Box
+servings: 1
+cook time: 0 minutes
+total time: 5 minutes
+meta:
+  first: 1
+  third: 3
+hero: assets/images/fireside-special.webp
+";
+        assert_eq!(serialized, expected);
+    }
+
+    #[test]
+    fn yaml_array_append_and_remove() {
+        let mut map = parse_yaml("title: Bread\ntags:\n  - bread\n  - draft\n").unwrap();
+
+        // Append single + deduplicate existing and repeated items.
+        append(&mut map, "tags", &[json!("must-try")]).unwrap();
+        append(
+            &mut map,
+            "tags",
+            &[json!("bread"), json!("featured"), json!("featured")],
+        )
+        .unwrap();
+        assert_eq!(
+            get(&map, "tags"),
+            Some(json!(["bread", "draft", "must-try", "featured"]))
+        );
+
+        // Append creates missing top-level and nested arrays (deduplicating input).
+        append(&mut map, "categories", &[json!("baking"), json!("baking")]).unwrap();
+        append(&mut map, "meta.labels", &[json!("v1")]).unwrap();
+        assert_eq!(get(&map, "categories"), Some(json!(["baking"])));
+        assert_eq!(get(&map, "meta.labels"), Some(json!(["v1"])));
+
+        // Remove single and multiple items while preserving remaining order.
+        remove_from_array(&mut map, "tags", &[json!("draft"), json!("featured")]).unwrap();
+        assert_eq!(get(&map, "tags"), Some(json!(["bread", "must-try"])));
+
+        // Remove missing item, empty array, missing key, and missing intermediate path are no-ops.
+        remove_from_array(&mut map, "tags", &[json!("nonexistent")]).unwrap();
+        remove_from_array(&mut map, "missing_key", &[json!("a")]).unwrap();
+        remove_from_array(&mut map, "absent.nested", &[json!("a")]).unwrap();
+        assert_eq!(get(&map, "absent"), None);
+
+        remove_from_array(&mut map, "categories", &[json!("baking")]).unwrap();
+        assert_eq!(get(&map, "categories"), Some(json!([])));
+        remove_from_array(&mut map, "categories", &[json!("baking")]).unwrap();
+        assert_eq!(get(&map, "categories"), Some(json!([])));
+
+        // Type errors on non-array target and non-mapping intermediate segments.
+        assert!(matches!(
+            append(&mut map, "title", &[json!("x")]),
+            Err(FrontmatterError::NotAnArray { .. })
+        ));
+        assert!(matches!(
+            remove_from_array(&mut map, "title", &[json!("x")]),
+            Err(FrontmatterError::NotAnArray { .. })
+        ));
+        assert!(matches!(
+            append(&mut map, "title.tags", &[json!("x")]),
+            Err(FrontmatterError::NotAMapping { .. })
+        ));
+        assert!(matches!(
+            remove_from_array(&mut map, "title.tags", &[json!("x")]),
+            Err(FrontmatterError::NotAMapping { .. })
+        ));
     }
 }

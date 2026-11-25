@@ -17,7 +17,7 @@ _mdfm() {
     _arguments "${_arguments_options[@]}" : \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
 '--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''tags contains "rust"'\'')]:EXPR:_default' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '-h[Print help]' \
@@ -37,7 +37,7 @@ _mdfm() {
 _arguments "${_arguments_options[@]}" : \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
 '--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''tags contains "rust"'\'')]:EXPR:_default' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '-h[Print help]' \
@@ -50,20 +50,20 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
 '--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''tags contains "rust"'\'')]:EXPR:_default' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--dry-run[Preview changes without writing files to disk]' \
 '-h[Print help]' \
 '--help[Print help]' \
-'*::args -- KEY=VALUE assignments followed by optional file or directory paths (defaults to '\''.'\''):_default' \
+'*::args -- KEY=VALUE, KEY+=VALUE, or KEY-=VALUE mutations followed by optional file or directory paths (defaults to '\''.'\''):_default' \
 && ret=0
 ;;
 (del)
 _arguments "${_arguments_options[@]}" : \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
 '--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''tags contains "rust"'\'')]:EXPR:_default' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--dry-run[Preview deletions without writing files to disk]' \
@@ -77,7 +77,7 @@ _arguments "${_arguments_options[@]}" : \
 '--schema=[Path to JSON Schema file]:SCHEMA:_files' \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
 '--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''tags contains "rust"'\'')]:EXPR:_default' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '-h[Print help]' \
@@ -89,7 +89,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
 '--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''tags contains "rust"'\'')]:EXPR:_default' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '-h[Print help]' \
@@ -101,7 +101,7 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
 '--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''tags contains "rust"'\'')]:EXPR:_default' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '-h[Print help]' \
@@ -113,7 +113,7 @@ _arguments "${_arguments_options[@]}" : \
 '--version=[Target a specific release version or tag (e.g. 0.1.0 or v0.1.0)]:VERSION:_default' \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
 '--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''tags contains "rust"'\'')]:EXPR:_default' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--check[Check for available updates without installing]' \
@@ -180,7 +180,7 @@ esac
 _mdfm_commands() {
     local commands; commands=(
 'get:Query a frontmatter key (supports dot paths like author.name) across Markdown files' \
-'set:Update or insert frontmatter keys (creates frontmatter using default_format if absent)' \
+'set:Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)' \
 'del:Delete one or more keys from frontmatter' \
 'check:Validate frontmatter against a JSON Schema' \
 'completions:Generate shell completion scripts (bash, zsh, fish, powershell, elvish)' \
@@ -214,7 +214,7 @@ _mdfm__subcmd__get_commands() {
 _mdfm__subcmd__help_commands() {
     local commands; commands=(
 'get:Query a frontmatter key (supports dot paths like author.name) across Markdown files' \
-'set:Update or insert frontmatter keys (creates frontmatter using default_format if absent)' \
+'set:Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)' \
 'del:Delete one or more keys from frontmatter' \
 'check:Validate frontmatter against a JSON Schema' \
 'completions:Generate shell completion scripts (bash, zsh, fish, powershell, elvish)' \

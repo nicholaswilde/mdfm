@@ -32,7 +32,7 @@ pub struct Cli {
     #[arg(long, env = "MDFM_OUTPUT", global = true)]
     pub output: Option<OutputFormat>,
 
-    /// Optional filter expression (e.g. 'draft == true', 'author.name == "Nick"', 'tags contains "rust"')
+    /// Optional filter expression (e.g. 'draft == true', 'author.name == "Nick"', '`prep time` != null', 'meta["prep time"] == "5m"')
     #[arg(long = "where", value_name = "EXPR", global = true)]
     pub where_expr: Option<String>,
 
@@ -70,9 +70,9 @@ pub enum Commands {
         /// Files or directories to search (defaults to current directory '.')
         paths: Vec<PathBuf>,
     },
-    /// Update or insert frontmatter keys (creates frontmatter using default_format if absent)
+    /// Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)
     Set {
-        /// KEY=VALUE assignments followed by optional file or directory paths (defaults to '.')
+        /// KEY=VALUE, KEY+=VALUE, or KEY-=VALUE mutations followed by optional file or directory paths (defaults to '.')
         #[arg(required = true, value_name = "KEY=VALUE [PATHS...]")]
         args: Vec<String>,
         /// Preview changes without writing files to disk

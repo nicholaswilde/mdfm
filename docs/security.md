@@ -8,7 +8,7 @@
 - **Format & Metadata Preservation:** UTF-8 BOMs (`\u{FEFF}`), `LF`/`CRLF` line endings, original YAML closing delimiters (`---` vs `...`), TOML delimiters (`+++`), and trailing-newline presence are preserved on round-trip.
 - **Lossless TOML Editing:** TOML frontmatter is mutated through `toml_edit`, retaining inline comments, blank lines, formatting, and key order.
 - **Unclosed Delimiter Safety:** An unclosed opening `---` (such as a Markdown horizontal rule) is treated as a body-only file rather than truncated or misparsed as frontmatter.
-- **No-Op Write Avoidance:** `mdfm set` and `mdfm del` compare the rendered output against the original content and only write to disk when bytes actually change.
+- **No-Op Write Avoidance:** `mdfm set` compares parsed frontmatter values before and after applying assignments and skips re-serializing or writing files that are semantically unchanged (preserving existing YAML/TOML formatting). `mdfm del` writes only when at least one key is removed, preserving remaining YAML key order.
 
 ## :test_tube: Safe Bulk Mutation & Validation Practices
 

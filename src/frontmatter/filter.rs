@@ -15,11 +15,15 @@ pub enum FilterError {
 
     #[error("unterminated string literal starting at position {pos}")]
     UnterminatedString { pos: usize },
+
+    #[error("unterminated quoted key starting at position {pos}")]
+    UnterminatedQuotedKey { pos: usize },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 enum TokenKind {
     Ident(String),
+    Backtick(String),
     Str(String),
     Int(i64),
     Float(f64),
@@ -37,12 +41,16 @@ enum TokenKind {
     Not,
     LParen,
     RParen,
+    LBracket,
+    RBracket,
+    Dot,
 }
 
 #[derive(Debug, Clone)]
 struct Token {
     kind: TokenKind,
     pos: usize,
+    end: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,15 +71,16 @@ pub enum FilterExpr {
     Or(Box<FilterExpr>, Box<FilterExpr>),
     Not(Box<FilterExpr>),
     Compare {
-        path: String,
+        path: Vec<String>,
         op: CompareOp,
         value: JsonValue,
     },
-    Truthy(String),
+    Truthy(Vec<String>),
 }
 
 impl FilterExpr {
     /// Parse a filter expression such as `draft == true`, `author.name == "Nick"`,
+    /// `` `prep time` != null ``, `meta["prep time"] == "5 minutes"`,
     /// or `tags contains "rust" and draft == false`.
     pub fn parse(input: &str) -> Result<Self, FilterError> {
         let tokens = tokenize(input)?;
@@ -115,11 +124,11 @@ fn is_truthy(val: &JsonValue) -> bool {
     }
 }
 
-fn lookup_path<'a>(root: &'a JsonValue, path: &str) -> Option<&'a JsonValue> {
+fn lookup_path<'a>(root: &'a JsonValue, path: &[String]) -> Option<&'a JsonValue> {
     let mut current = root;
-    for seg in path.split('.') {
+    for seg in path {
         match current {
-            JsonValue::Object(map) => current = map.get(seg)?,
+            JsonValue::Object(map) => current = map.get(seg.as_str())?,
             JsonValue::Array(arr) => {
                 let idx = seg.parse::<usize>().ok()?;
                 current = arr.get(idx)?;
@@ -186,6 +195,44 @@ fn evaluate_compare(actual: Option<&JsonValue>, op: CompareOp, expected: &JsonVa
     }
 }
 
+fn scan_quoted(input: &str, start: usize, quote: char) -> Result<(String, usize), FilterError> {
+    let unterminated = || {
+        if quote == '`' {
+            FilterError::UnterminatedQuotedKey { pos: start }
+        } else {
+            FilterError::UnterminatedString { pos: start }
+        }
+    };
+    let after_open = start + quote.len_utf8();
+    let mut buf = String::new();
+    let mut chars = input[after_open..].char_indices();
+    while let Some((rel, ch)) = chars.next() {
+        if ch == '\\' {
+            let Some((_, esc)) = chars.next() else {
+                return Err(unterminated());
+            };
+            match esc {
+                'n' => buf.push('\n'),
+                'r' => buf.push('\r'),
+                't' => buf.push('\t'),
+                '\\' => buf.push('\\'),
+                '"' => buf.push('"'),
+                '\'' => buf.push('\''),
+                '`' => buf.push('`'),
+                other => {
+                    buf.push('\\');
+                    buf.push(other);
+                }
+            }
+        } else if ch == quote {
+            return Ok((buf, after_open + rel + ch.len_utf8()));
+        } else {
+            buf.push(ch);
+        }
+    }
+    Err(unterminated())
+}
+
 fn tokenize(input: &str) -> Result<Vec<Token>, FilterError> {
     let mut tokens = Vec::new();
     let bytes = input.as_bytes();
@@ -199,196 +246,134 @@ fn tokenize(input: &str) -> Result<Vec<Token>, FilterError> {
         }
 
         let start = i;
-        match b {
-            b'(' => {
-                tokens.push(Token {
-                    kind: TokenKind::LParen,
-                    pos: start,
-                });
-                i += 1;
-            }
-            b')' => {
-                tokens.push(Token {
-                    kind: TokenKind::RParen,
-                    pos: start,
-                });
-                i += 1;
-            }
-            b'=' if bytes.get(i + 1) == Some(&b'=') => {
-                tokens.push(Token {
-                    kind: TokenKind::Eq,
-                    pos: start,
-                });
-                i += 2;
-            }
-            b'!' if bytes.get(i + 1) == Some(&b'=') => {
-                tokens.push(Token {
-                    kind: TokenKind::Ne,
-                    pos: start,
-                });
-                i += 2;
-            }
-            b'!' => {
-                tokens.push(Token {
-                    kind: TokenKind::Not,
-                    pos: start,
-                });
-                i += 1;
-            }
-            b'>' if bytes.get(i + 1) == Some(&b'=') => {
-                tokens.push(Token {
-                    kind: TokenKind::Ge,
-                    pos: start,
-                });
-                i += 2;
-            }
-            b'>' => {
-                tokens.push(Token {
-                    kind: TokenKind::Gt,
-                    pos: start,
-                });
-                i += 1;
-            }
-            b'<' if bytes.get(i + 1) == Some(&b'=') => {
-                tokens.push(Token {
-                    kind: TokenKind::Le,
-                    pos: start,
-                });
-                i += 2;
-            }
-            b'<' => {
-                tokens.push(Token {
-                    kind: TokenKind::Lt,
-                    pos: start,
-                });
-                i += 1;
-            }
-            b'&' if bytes.get(i + 1) == Some(&b'&') => {
-                tokens.push(Token {
-                    kind: TokenKind::And,
-                    pos: start,
-                });
-                i += 2;
-            }
-            b'|' if bytes.get(i + 1) == Some(&b'|') => {
-                tokens.push(Token {
-                    kind: TokenKind::Or,
-                    pos: start,
-                });
-                i += 2;
-            }
-            b'"' | b'\'' => {
-                let quote = b as char;
-                i += 1;
-                let mut buf = String::new();
-                let mut closed = false;
-                let mut chars = input[i..].char_indices();
-                while let Some((rel, ch)) = chars.next() {
-                    if ch == '\\' {
-                        if let Some((_, esc)) = chars.next() {
-                            match esc {
-                                'n' => buf.push('\n'),
-                                'r' => buf.push('\r'),
-                                't' => buf.push('\t'),
-                                '\\' => buf.push('\\'),
-                                '"' => buf.push('"'),
-                                '\'' => buf.push('\''),
-                                other => {
-                                    buf.push('\\');
-                                    buf.push(other);
-                                }
-                            }
-                        } else {
-                            return Err(FilterError::UnterminatedString { pos: start });
-                        }
-                    } else if ch == quote {
-                        i += rel + ch.len_utf8();
-                        closed = true;
-                        break;
-                    } else {
-                        buf.push(ch);
-                    }
-                }
-                if !closed {
-                    return Err(FilterError::UnterminatedString { pos: start });
-                }
-                tokens.push(Token {
-                    kind: TokenKind::Str(buf),
-                    pos: start,
-                });
-            }
-            b'0'..=b'9' | b'-'
-                if b.is_ascii_digit()
-                    || (b == b'-' && bytes.get(i + 1).is_some_and(u8::is_ascii_digit)) =>
-            {
-                i += 1;
-                let mut has_dot = false;
-                while i < bytes.len() {
-                    let c = bytes[i];
-                    if c.is_ascii_digit() {
-                        i += 1;
-                    } else if c == b'.'
-                        && !has_dot
-                        && bytes.get(i + 1).is_some_and(u8::is_ascii_digit)
-                    {
-                        has_dot = true;
-                        i += 1;
-                    } else {
-                        break;
-                    }
-                }
-                let raw = &input[start..i];
-                let kind = if has_dot {
-                    let f = raw
-                        .parse::<f64>()
-                        .map_err(|_| FilterError::UnexpectedToken {
-                            token: raw.to_string(),
-                            pos: start,
-                        })?;
-                    TokenKind::Float(f)
+        let next = bytes.get(i + 1).copied();
+        let punct = match (b, next) {
+            (b'(', _) => Some((TokenKind::LParen, 1)),
+            (b')', _) => Some((TokenKind::RParen, 1)),
+            (b'[', _) => Some((TokenKind::LBracket, 1)),
+            (b']', _) => Some((TokenKind::RBracket, 1)),
+            (b'.', _) => Some((TokenKind::Dot, 1)),
+            (b'=', Some(b'=')) => Some((TokenKind::Eq, 2)),
+            (b'!', Some(b'=')) => Some((TokenKind::Ne, 2)),
+            (b'!', _) => Some((TokenKind::Not, 1)),
+            (b'>', Some(b'=')) => Some((TokenKind::Ge, 2)),
+            (b'>', _) => Some((TokenKind::Gt, 1)),
+            (b'<', Some(b'=')) => Some((TokenKind::Le, 2)),
+            (b'<', _) => Some((TokenKind::Lt, 1)),
+            (b'&', Some(b'&')) => Some((TokenKind::And, 2)),
+            (b'|', Some(b'|')) => Some((TokenKind::Or, 2)),
+            _ => None,
+        };
+        if let Some((kind, len)) = punct {
+            i += len;
+            tokens.push(Token {
+                kind,
+                pos: start,
+                end: i,
+            });
+            continue;
+        }
+
+        if matches!(b, b'"' | b'\'' | b'`') {
+            let (buf, end) = scan_quoted(input, start, b as char)?;
+            i = end;
+            let kind = if b == b'`' {
+                TokenKind::Backtick(buf)
+            } else {
+                TokenKind::Str(buf)
+            };
+            tokens.push(Token {
+                kind,
+                pos: start,
+                end,
+            });
+            continue;
+        }
+
+        let after_adjacent_dot = tokens
+            .last()
+            .is_some_and(|t: &Token| t.kind == TokenKind::Dot && t.end == start);
+
+        if !after_adjacent_dot
+            && (b.is_ascii_digit() || (b == b'-' && next.is_some_and(|c| c.is_ascii_digit())))
+        {
+            i += 1;
+            let mut has_dot = false;
+            while i < bytes.len() {
+                let c = bytes[i];
+                if c.is_ascii_digit() {
+                    i += 1;
+                } else if c == b'.' && !has_dot && bytes.get(i + 1).is_some_and(u8::is_ascii_digit)
+                {
+                    has_dot = true;
+                    i += 1;
                 } else {
-                    let n = raw
-                        .parse::<i64>()
-                        .map_err(|_| FilterError::UnexpectedToken {
-                            token: raw.to_string(),
-                            pos: start,
-                        })?;
-                    TokenKind::Int(n)
-                };
-                tokens.push(Token { kind, pos: start });
+                    break;
+                }
             }
-            _ => {
-                // Identifier / dot-path (allows alphanumerics, `_`, `-`, `.`).
-                let mut end = i;
-                for (rel, ch) in input[i..].char_indices() {
-                    if ch.is_alphanumeric() || matches!(ch, '_' | '-' | '.') {
-                        end = i + rel + ch.len_utf8();
-                    } else {
-                        break;
-                    }
-                }
-                if end == i {
-                    let ch = input[i..].chars().next().unwrap_or('?');
-                    return Err(FilterError::UnexpectedToken {
-                        token: ch.to_string(),
+            let raw = &input[start..i];
+            let kind = if has_dot {
+                let f = raw
+                    .parse::<f64>()
+                    .map_err(|_| FilterError::UnexpectedToken {
+                        token: raw.to_string(),
                         pos: start,
-                    });
-                }
-                let word = &input[start..end];
-                i = end;
-                let kind = match word {
-                    "true" => TokenKind::Bool(true),
-                    "false" => TokenKind::Bool(false),
-                    "null" => TokenKind::Null,
-                    "and" | "AND" => TokenKind::And,
-                    "or" | "OR" => TokenKind::Or,
-                    "not" | "NOT" => TokenKind::Not,
-                    "contains" | "CONTAINS" => TokenKind::Contains,
-                    _ => TokenKind::Ident(word.to_string()),
-                };
-                tokens.push(Token { kind, pos: start });
+                    })?;
+                TokenKind::Float(f)
+            } else {
+                let n = raw
+                    .parse::<i64>()
+                    .map_err(|_| FilterError::UnexpectedToken {
+                        token: raw.to_string(),
+                        pos: start,
+                    })?;
+                TokenKind::Int(n)
+            };
+            tokens.push(Token {
+                kind,
+                pos: start,
+                end: i,
+            });
+            continue;
+        }
+
+        // Identifier segment (allows alphanumerics, `_`, `-`; dots are tokenized separately).
+        let mut end = i;
+        for (rel, ch) in input[i..].char_indices() {
+            if ch.is_alphanumeric() || matches!(ch, '_' | '-') {
+                end = i + rel + ch.len_utf8();
+            } else {
+                break;
             }
         }
+        if end == i {
+            let ch = input[i..].chars().next().unwrap_or('?');
+            return Err(FilterError::UnexpectedToken {
+                token: ch.to_string(),
+                pos: start,
+            });
+        }
+        let word = &input[start..end];
+        i = end;
+        let kind = if after_adjacent_dot {
+            TokenKind::Ident(word.to_string())
+        } else {
+            match word {
+                "true" => TokenKind::Bool(true),
+                "false" => TokenKind::Bool(false),
+                "null" => TokenKind::Null,
+                "and" | "AND" => TokenKind::And,
+                "or" | "OR" => TokenKind::Or,
+                "not" | "NOT" => TokenKind::Not,
+                "contains" | "CONTAINS" => TokenKind::Contains,
+                _ => TokenKind::Ident(word.to_string()),
+            }
+        };
+        tokens.push(Token {
+            kind,
+            pos: start,
+            end,
+        });
     }
 
     Ok(tokens)
@@ -460,7 +445,11 @@ impl Parser {
                     None => Err(FilterError::UnexpectedEof),
                 }
             }
-            TokenKind::Ident(path) => {
+            TokenKind::Ident(_)
+            | TokenKind::Str(_)
+            | TokenKind::Backtick(_)
+            | TokenKind::LBracket => {
+                let path = self.parse_path(tok)?;
                 let op = match self.peek().map(|t| &t.kind) {
                     Some(TokenKind::Eq) => Some(CompareOp::Eq),
                     Some(TokenKind::Ne) => Some(CompareOp::Ne),
@@ -487,10 +476,107 @@ impl Parser {
         }
     }
 
+    fn parse_path(&mut self, first: Token) -> Result<Vec<String>, FilterError> {
+        let head = match first.kind {
+            TokenKind::Ident(s) => s,
+            TokenKind::Str(s) | TokenKind::Backtick(s) if !s.is_empty() => s,
+            TokenKind::LBracket => self.parse_bracket_segment()?,
+            other => {
+                return Err(FilterError::UnexpectedToken {
+                    token: format!("{other:?}"),
+                    pos: first.pos,
+                });
+            }
+        };
+
+        let mut segments = vec![head];
+        loop {
+            match self.peek().map(|t| &t.kind) {
+                Some(TokenKind::Dot) => {
+                    self.next();
+                    let seg_tok = self.next().ok_or(FilterError::UnexpectedEof)?;
+                    let seg = match seg_tok.kind {
+                        TokenKind::Ident(s) => s,
+                        TokenKind::Str(s) | TokenKind::Backtick(s) if !s.is_empty() => s,
+                        TokenKind::Int(n) if n >= 0 => n.to_string(),
+                        other => {
+                            return Err(FilterError::UnexpectedToken {
+                                token: format!("{other:?}"),
+                                pos: seg_tok.pos,
+                            });
+                        }
+                    };
+                    segments.push(seg);
+                }
+                Some(TokenKind::LBracket) => {
+                    self.next();
+                    segments.push(self.parse_bracket_segment()?);
+                }
+                _ => break,
+            }
+        }
+
+        Ok(segments)
+    }
+
+    fn parse_bracket_segment(&mut self) -> Result<String, FilterError> {
+        let inner = self.next().ok_or(FilterError::UnexpectedEof)?;
+        let seg = match inner.kind {
+            TokenKind::Str(s) if !s.is_empty() => s,
+            TokenKind::Int(n) if n >= 0 => n.to_string(),
+            other => {
+                return Err(FilterError::UnexpectedToken {
+                    token: format!("{other:?}"),
+                    pos: inner.pos,
+                });
+            }
+        };
+        match self.next() {
+            Some(Token {
+                kind: TokenKind::RBracket,
+                ..
+            }) => Ok(seg),
+            Some(other) => Err(FilterError::UnexpectedToken {
+                token: format!("{:?}", other.kind),
+                pos: other.pos,
+            }),
+            None => Err(FilterError::UnexpectedEof),
+        }
+    }
+
     fn parse_literal(&mut self) -> Result<JsonValue, FilterError> {
         let tok = self.next().ok_or(FilterError::UnexpectedEof)?;
         match tok.kind {
-            TokenKind::Str(s) | TokenKind::Ident(s) => Ok(JsonValue::String(s)),
+            TokenKind::Str(s) => Ok(JsonValue::String(s)),
+            TokenKind::Ident(mut s) => {
+                let mut end = tok.end;
+                while let Some(dot) = self.peek() {
+                    if dot.kind != TokenKind::Dot || dot.pos != end {
+                        break;
+                    }
+                    let dot_end = dot.end;
+                    self.next();
+                    match self.next() {
+                        Some(Token {
+                            kind: TokenKind::Ident(seg),
+                            pos,
+                            end: seg_end,
+                        }) if pos == dot_end => {
+                            s.push('.');
+                            s.push_str(&seg);
+                            end = seg_end;
+                        }
+                        Some(other) => {
+                            return Err(FilterError::UnexpectedToken {
+                                token: format!("{:?}", other.kind),
+                                pos: other.pos,
+                            });
+                        }
+                        None => return Err(FilterError::UnexpectedEof),
+                    }
+                }
+                Ok(JsonValue::String(s))
+            }
             TokenKind::Int(i) => Ok(JsonValue::Number(i.into())),
             TokenKind::Float(f) => serde_json::Number::from_f64(f)
                 .map(JsonValue::Number)
@@ -635,5 +721,243 @@ mod tests {
         assert!(FilterExpr::parse(r#"escaped == "line1\nline2\r\t\\\"'\x""#)
             .unwrap()
             .matches(&doc));
+    }
+
+    #[test]
+    fn filter_quoted_backtick_and_bracket_keys_with_spaces() {
+        let doc = json!({
+            "prep time": "10 minutes",
+            "cook time": "20 minutes",
+            "total time": "30 minutes",
+            "empty time": "",
+            "null time": null
+        });
+
+        // Quoted LHS paths (double and single quotes).
+        assert!(FilterExpr::parse(r#""prep time" != null"#)
+            .unwrap()
+            .matches(&doc));
+        assert!(!FilterExpr::parse(r#""null time" != null"#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#""prep time" == "10 minutes""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"'cook time' == "20 minutes""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"'total time' contains "30""#)
+            .unwrap()
+            .matches(&doc));
+
+        // Backtick-quoted key paths.
+        assert!(FilterExpr::parse("`prep time` != null")
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"`cook time` == "20 minutes""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"`total time` == "30 minutes""#)
+            .unwrap()
+            .matches(&doc));
+
+        // Bracket notation at root.
+        assert!(FilterExpr::parse(r#"["prep time"] != null"#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"['cook time'] == "20 minutes""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"["total time"] contains "minutes""#)
+            .unwrap()
+            .matches(&doc));
+
+        // Truthiness, negation, and boolean composition.
+        assert!(FilterExpr::parse(r#""prep time""#).unwrap().matches(&doc));
+        assert!(!FilterExpr::parse(r#""empty time""#).unwrap().matches(&doc));
+        assert!(FilterExpr::parse(r#"!"empty time""#).unwrap().matches(&doc));
+        assert!(FilterExpr::parse("`prep time`").unwrap().matches(&doc));
+        assert!(FilterExpr::parse("not `empty time`").unwrap().matches(&doc));
+        assert!(FilterExpr::parse(r#"["prep time"]"#).unwrap().matches(&doc));
+        assert!(FilterExpr::parse(r#"!["null time"]"#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(
+            r#"("prep time" != null && 'cook time' == "20 minutes") and not `empty time`"#
+        )
+        .unwrap()
+        .matches(&doc));
+    }
+
+    #[test]
+    fn filter_nested_punctuation_and_indexed_paths() {
+        let doc = json!({
+            "version": "v1.2",
+            "meta": {
+                "prep time": "5 minutes",
+                "and": "yes",
+                "null": "ok",
+                "true": 42
+            },
+            "recipe info": {
+                "prep time": "5 minutes",
+                "author": { "name": "Nick" }
+            },
+            "a.b": { "c": 1 },
+            "prep/cook time": "15m",
+            "cost ($)": 12,
+            "has \"quote\"": true,
+            "it's ready": true,
+            "has `tick`": true,
+            "and": 1,
+            "true": false,
+            "null": "present",
+            "tags": ["rust", "cli"],
+            "items": [{ "name": "Bread", "prep time": "5 minutes" }],
+            "matrix": [["a", "b"]]
+        });
+
+        // Dotted + bracketed / quoted / backticked combinations.
+        assert!(FilterExpr::parse(r#"meta["prep time"] == "5 minutes""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"meta['prep time'] == "5 minutes""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"meta."prep time" == "5 minutes""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"meta.'prep time' == "5 minutes""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"meta.`prep time` == "5 minutes""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(
+            FilterExpr::parse(r#"["recipe info"]["prep time"] == "5 minutes""#)
+                .unwrap()
+                .matches(&doc)
+        );
+        assert!(
+            FilterExpr::parse(r#"["recipe info"].author.name == "Nick""#)
+                .unwrap()
+                .matches(&doc)
+        );
+        assert!(
+            FilterExpr::parse(r#"`recipe info`.`prep time` == "5 minutes""#)
+                .unwrap()
+                .matches(&doc)
+        );
+        assert!(
+            FilterExpr::parse(r#"`recipe info`["prep time"] == "5 minutes""#)
+                .unwrap()
+                .matches(&doc)
+        );
+        assert!(
+            FilterExpr::parse(r#""recipe info"."prep time" == "5 minutes""#)
+                .unwrap()
+                .matches(&doc)
+        );
+
+        // Array indexing via brackets and multi-level dot indices.
+        assert!(FilterExpr::parse(r#"tags[0] == "rust""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"items[0]["prep time"] == "5 minutes""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"items[0].name == "Bread""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"items.0["prep time"] == "5 minutes""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"matrix.0.1 == "b""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"matrix[0][1] == "b""#)
+            .unwrap()
+            .matches(&doc));
+
+        // Literal dots, punctuation, escaped quotes/backticks, and keywords as keys.
+        assert!(FilterExpr::parse(r#"["a.b"].c == 1"#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse("`a.b`.c == 1").unwrap().matches(&doc));
+        assert!(FilterExpr::parse(r#""a.b".c == 1"#).unwrap().matches(&doc));
+        assert!(FilterExpr::parse(r#""prep/cook time" == "15m""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#""cost ($)" == 12"#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"["has \"quote\""] == true"#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"'it\'s ready' == true"#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"`has \`tick\`` == true"#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"["and"] == 1"#).unwrap().matches(&doc));
+        assert!(FilterExpr::parse("`true` == false").unwrap().matches(&doc));
+        assert!(FilterExpr::parse(r#""null" != null"#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"meta.and == "yes""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse(r#"meta.null == "ok""#)
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse("meta.true == 42").unwrap().matches(&doc));
+
+        // Dotted unquoted bareword on RHS remains valid.
+        assert!(FilterExpr::parse("version == v1.2").unwrap().matches(&doc));
+    }
+
+    #[test]
+    fn filter_invalid_quoted_and_bracket_expressions_error() {
+        // Empty key segments.
+        assert!(FilterExpr::parse(r#""""#).is_err());
+        assert!(FilterExpr::parse(r#""" == 1"#).is_err());
+        assert!(FilterExpr::parse("`` == 1").is_err());
+        assert!(FilterExpr::parse(r#"[""] == 1"#).is_err());
+        assert!(FilterExpr::parse(r#"meta[""] == 1"#).is_err());
+        assert!(FilterExpr::parse(r#"meta."" == 1"#).is_err());
+        assert!(FilterExpr::parse("meta.`` == 1").is_err());
+
+        // Unterminated backticks.
+        assert_eq!(
+            FilterExpr::parse("`prep time"),
+            Err(FilterError::UnterminatedQuotedKey { pos: 0 })
+        );
+        assert_eq!(
+            FilterExpr::parse(r#"`bad\"#),
+            Err(FilterError::UnterminatedQuotedKey { pos: 0 })
+        );
+
+        // Malformed brackets.
+        assert!(FilterExpr::parse("[]").is_err());
+        assert!(FilterExpr::parse(r#"["prep time""#).is_err());
+        assert!(FilterExpr::parse("[prep]").is_err());
+        assert!(FilterExpr::parse("tags[-1]").is_err());
+        assert!(FilterExpr::parse("tags[1.5]").is_err());
+        assert!(FilterExpr::parse("tags[true]").is_err());
+        assert!(FilterExpr::parse(r#"["prep time" "extra"]"#).is_err());
+
+        // Malformed dots and RHS tokens.
+        assert!(FilterExpr::parse(".meta").is_err());
+        assert!(FilterExpr::parse("meta.").is_err());
+        assert!(FilterExpr::parse("meta..name").is_err());
+        assert!(FilterExpr::parse("meta. == 1").is_err());
+        assert!(FilterExpr::parse("meta. and draft").is_err());
+        assert!(FilterExpr::parse(r#"meta.["prep time"]"#).is_err());
+        assert!(FilterExpr::parse("title == `foo`").is_err());
+        assert!(FilterExpr::parse(r#"title == ["foo"]"#).is_err());
+        assert!(FilterExpr::parse(r#""prep time" "cook time""#).is_err());
+        assert!(FilterExpr::parse("version == v1.").is_err());
+        assert!(FilterExpr::parse("version == v1. and draft").is_err());
     }
 }

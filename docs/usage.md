@@ -51,7 +51,7 @@ Files without frontmatter or without the requested key are silently skipped.
 
 ## :pencil2: Updating & Inserting Keys (`set`)
 
-Pass one or more `KEY=VALUE` assignments followed by optional file or directory paths (defaults to `.`):
+Pass one or more `KEY=VALUE`, `KEY+=VALUE`, or `KEY-=VALUE` mutations followed by optional file or directory paths (defaults to `.`):
 
 ```bash
 # Preview changes without modifying files on disk
@@ -60,12 +60,25 @@ mdfm set draft=false 'tags=["rust","cli"]' posts/ --dry-run
 # Apply updates in-place
 mdfm set draft=false 'tags=["rust","cli"]' posts/
 
+# Append or remove items from array keys (deduplicated)
+mdfm set tags+=must-try docs/breads/savory-star-bread.md
+mdfm set tags-=draft docs/
+mdfm --where 'tags contains "applied-kitchen"' set tags+=featured docs/
+
 # Set nested keys (intermediate objects/tables are created automatically)
 mdfm set author.name="Nicholas Wilde" author.role=maintainer posts/hello.md
 
 # Add frontmatter to body-only Markdown files using TOML format
 mdfm --format toml set title="New Note" draft=true notes/plain.md
 ```
+
+### Array Append & Remove (`+=` / `-=`)
+
+Mutate YAML sequences and TOML arrays without overwriting the entire list:
+
+- **`KEY+=VALUE`**: Appends `VALUE` if not already present (deduplicated). Creates intermediate objects/tables and a new array if `KEY` is absent. Passing a JSON array (e.g. `'tags+=["a","b"]'`) appends each item in order.
+- **`KEY-=VALUE`**: Removes matching item(s) while preserving remaining element order. Passing a JSON array (e.g. `'tags-=["draft","wip"]'`) removes each matching item. Missing keys, empty arrays, and body-only files are left untouched as no-ops.
+- **Type safety**: Applying `+=` or `-=` to an existing non-array key (such as a string, boolean, number, or table) exits with an error.
 
 ### Typed Value Parsing
 
@@ -83,7 +96,7 @@ mdfm --format toml set title="New Note" draft=true notes/plain.md
 | `title="Hello World"` | String | Default fallback for plain text |
 
 !!! note
-    When editing existing frontmatter, `mdfm` preserves its original format (YAML or TOML) and closing delimiter (`---`, `...`, or `+++`). `--format` / `default_format` only applies when creating frontmatter on a file that has none.
+    When editing existing frontmatter, `mdfm` preserves its original format (YAML or TOML) and closing delimiter (`---`, `...`, or `+++`). Files whose frontmatter values are semantically unchanged are skipped without rewriting, keeping existing YAML/TOML formatting intact. `--format` / `default_format` only applies when creating frontmatter on a file that has none, emitting a blank line after the closing delimiter before non-empty body content (`rumdl` `MD071`-compatible).
 
 ## :wastebasket: Deleting Keys (`del`)
 
@@ -115,7 +128,18 @@ The global `--where` flag filters Markdown files before `get`, `set`, `del`, or 
 | Membership / Substring | `contains` (or `CONTAINS`) | `tags contains "rust"`, `title contains "Guide"` |
 | Logical | `and`/`&&`, `or`/`||`, `not`/`!` | `draft == false && tags contains "rust"` |
 | Grouping | `( ... )` | `(draft == false or weight == 10) and not archived` |
-| Truthiness | Bare key path | `draft`, `not archived` |
+| Truthiness | Bare key path | `draft`, `not archived`, `` `prep time` `` |
+| Keys with spaces / punctuation | `"..."`, `'...'`, `` `...` ``, `["..."]`, `[N]` | `"prep time" != null`, `` `cook time` ``, `meta["prep time"] == "5 minutes"`, `tags[0] == "rust"` |
+
+### Keys with Spaces or Special Characters
+
+Frontmatter keys containing spaces, dots, punctuation, or filter keywords (such as `and`, `true`, `null`) can be referenced using any of three equivalent forms:
+
+- **Quoted segments:** `"prep time" != null`, `'cook time' == "20 minutes"`, `meta."prep time" == "5 minutes"`
+- **Backtick identifiers:** `` `prep time` != null ``, `` meta.`prep time` == "5 minutes" ``
+- **Bracket notation:** `["prep time"] != null`, `meta["prep time"] == "5 minutes"`, `["recipe info"]["prep time"]`, `tags[0] == "rust"`
+
+Quoted, backticked, and bracketed segments treat embedded `.` characters as literal parts of the key name (for example, `["a.b"].c` looks up key `"a.b"` followed by `"c"`).
 
 ### Filter Examples
 
@@ -125,6 +149,10 @@ mdfm --where 'draft == false and tags contains "rust"' get title posts/
 
 # Check array element by index or substring in title
 mdfm --where 'tags.0 == "rust" or title contains "Frontmatter"' get title posts/
+
+# Filter on keys containing spaces or special characters
+mdfm --where '"prep time" != null' get title recipes/
+mdfm --where '`cook time` == "20 minutes" and meta["prep time"] == "5 minutes"' get title recipes/
 
 # Bulk publish drafts with weight >= 10
 mdfm --where 'draft == true && weight >= 10' set draft=false posts/ --dry-run

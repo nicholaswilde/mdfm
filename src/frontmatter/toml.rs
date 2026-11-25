@@ -85,12 +85,14 @@ enum TableRef<'a> {
     Inline(&'a mut InlineTable),
 }
 
-/// Losslessly insert or update a dot-separated key path in a TOML document.
-pub fn set(doc: &mut DocumentMut, path: &str, value: JsonValue) -> Result<(), FrontmatterError> {
-    let segments = split_key_path(path)?;
+fn ensure_parent_table<'a>(
+    doc: &'a mut DocumentMut,
+    parent_segments: &[&str],
+    full_path: &str,
+) -> Result<TableRef<'a>, FrontmatterError> {
     let mut current = TableRef::Table(doc.as_table_mut());
 
-    for seg in &segments[..segments.len() - 1] {
+    for seg in parent_segments {
         current = match current {
             TableRef::Table(tbl) => {
                 if !tbl.contains_key(seg) {
@@ -102,7 +104,7 @@ pub fn set(doc: &mut DocumentMut, path: &str, value: JsonValue) -> Result<(), Fr
                     _ => {
                         return Err(FrontmatterError::NotAMapping {
                             key: (*seg).to_string(),
-                            path: path.to_string(),
+                            path: full_path.to_string(),
                         });
                     }
                 }
@@ -116,13 +118,60 @@ pub fn set(doc: &mut DocumentMut, path: &str, value: JsonValue) -> Result<(), Fr
                     _ => {
                         return Err(FrontmatterError::NotAMapping {
                             key: (*seg).to_string(),
-                            path: path.to_string(),
+                            path: full_path.to_string(),
                         });
                     }
                 }
             }
         };
     }
+
+    Ok(current)
+}
+
+fn append_to_toml_array(arr: &mut Array, items: &[JsonValue]) -> Result<(), FrontmatterError> {
+    let mut existing: Vec<JsonValue> = arr.iter().map(toml_value_to_json).collect();
+    for item in items {
+        if !existing.iter().any(|e| e == item) {
+            let toml_val = json_to_toml_value(item)?;
+            arr.push(toml_val);
+            existing.push(item.clone());
+        }
+    }
+    Ok(())
+}
+
+fn remove_from_toml_array(arr: &mut Array, items: &[JsonValue]) {
+    let indices: Vec<usize> = arr
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, val)| {
+            let val_json = toml_value_to_json(val);
+            items
+                .iter()
+                .any(|target| target == &val_json)
+                .then_some(idx)
+        })
+        .collect();
+
+    let removed_first = indices.first() == Some(&0);
+    for idx in indices.into_iter().rev() {
+        arr.remove(idx);
+    }
+
+    if removed_first {
+        if let Some(first) = arr.get_mut(0) {
+            if first.decor().prefix().and_then(|p| p.as_str()) == Some(" ") {
+                first.decor_mut().set_prefix("");
+            }
+        }
+    }
+}
+
+/// Losslessly insert or update a dot-separated key path in a TOML document.
+pub fn set(doc: &mut DocumentMut, path: &str, value: JsonValue) -> Result<(), FrontmatterError> {
+    let segments = split_key_path(path)?;
+    let current = ensure_parent_table(doc, &segments[..segments.len() - 1], path)?;
 
     let last = segments[segments.len() - 1];
     let mut new_val = json_to_toml_value(&value)?;
@@ -152,6 +201,108 @@ pub fn set(doc: &mut DocumentMut, path: &str, value: JsonValue) -> Result<(), Fr
     }
 
     Ok(())
+}
+
+/// Losslessly append item(s) to a TOML array at `path`, deduplicating existing entries.
+///
+/// Creates intermediate tables and a new array if the target key is absent.
+pub fn append(
+    doc: &mut DocumentMut,
+    path: &str,
+    items: &[JsonValue],
+) -> Result<(), FrontmatterError> {
+    let segments = split_key_path(path)?;
+    let current = ensure_parent_table(doc, &segments[..segments.len() - 1], path)?;
+    let last = segments[segments.len() - 1];
+
+    match current {
+        TableRef::Table(tbl) => match tbl.get_mut(last) {
+            Some(Item::Value(TomlValue::Array(arr))) => append_to_toml_array(arr, items),
+            Some(_) => Err(FrontmatterError::NotAnArray {
+                path: path.to_string(),
+            }),
+            None => {
+                let mut arr = Array::new();
+                append_to_toml_array(&mut arr, items)?;
+                tbl.insert(last, toml_edit::value(TomlValue::Array(arr)));
+                Ok(())
+            }
+        },
+        TableRef::Inline(inline) => match inline.get_mut(last) {
+            Some(TomlValue::Array(arr)) => append_to_toml_array(arr, items),
+            Some(_) => Err(FrontmatterError::NotAnArray {
+                path: path.to_string(),
+            }),
+            None => {
+                let mut arr = Array::new();
+                append_to_toml_array(&mut arr, items)?;
+                inline.insert(last, TomlValue::Array(arr));
+                Ok(())
+            }
+        },
+    }
+}
+
+/// Losslessly remove matching item(s) from a TOML array at `path`.
+///
+/// Missing intermediate tables or target keys are treated as no-ops.
+pub fn remove_from_array(
+    doc: &mut DocumentMut,
+    path: &str,
+    items: &[JsonValue],
+) -> Result<(), FrontmatterError> {
+    let segments = split_key_path(path)?;
+    let mut current = TableRef::Table(doc.as_table_mut());
+
+    for seg in &segments[..segments.len() - 1] {
+        current = match current {
+            TableRef::Table(tbl) => match tbl.get_mut(seg) {
+                None => return Ok(()),
+                Some(Item::Table(next)) => TableRef::Table(next),
+                Some(Item::Value(TomlValue::InlineTable(inline))) => TableRef::Inline(inline),
+                Some(_) => {
+                    return Err(FrontmatterError::NotAMapping {
+                        key: (*seg).to_string(),
+                        path: path.to_string(),
+                    });
+                }
+            },
+            TableRef::Inline(inline) => match inline.get_mut(seg) {
+                None => return Ok(()),
+                Some(TomlValue::InlineTable(next)) => TableRef::Inline(next),
+                Some(_) => {
+                    return Err(FrontmatterError::NotAMapping {
+                        key: (*seg).to_string(),
+                        path: path.to_string(),
+                    });
+                }
+            },
+        };
+    }
+
+    let last = segments[segments.len() - 1];
+    match current {
+        TableRef::Table(tbl) => match tbl.get_mut(last) {
+            None => Ok(()),
+            Some(Item::Value(TomlValue::Array(arr))) => {
+                remove_from_toml_array(arr, items);
+                Ok(())
+            }
+            Some(_) => Err(FrontmatterError::NotAnArray {
+                path: path.to_string(),
+            }),
+        },
+        TableRef::Inline(inline) => match inline.get_mut(last) {
+            None => Ok(()),
+            Some(TomlValue::Array(arr)) => {
+                remove_from_toml_array(arr, items);
+                Ok(())
+            }
+            Some(_) => Err(FrontmatterError::NotAnArray {
+                path: path.to_string(),
+            }),
+        },
+    }
 }
 
 /// Losslessly delete a dot-separated key path from a TOML document.
@@ -368,5 +519,75 @@ tags = [\"a\", \"b\"]
         assert!(!del(&mut doc, "missing.path").unwrap());
         assert!(del(&mut doc, "rating").unwrap());
         assert!(!del(&mut doc, "rating").unwrap());
+    }
+
+    #[test]
+    fn toml_array_append_and_remove_lossless() {
+        let raw = "\
+title = \"TOML Guide\"
+tags = [\"rust\", \"draft\"] # keep comment
+inline_meta = { labels = [\"a\"] }
+";
+        let mut doc = parse_toml(raw).unwrap();
+
+        // Append + deduplicate while preserving inline comments.
+        append(&mut doc, "tags", &[json!("cli")]).unwrap();
+        append(&mut doc, "tags", &[json!("rust"), json!("md"), json!("md")]).unwrap();
+        assert_eq!(
+            get(&doc, "tags"),
+            Some(json!(["rust", "draft", "cli", "md"]))
+        );
+        let after_append = serialize_toml(&doc);
+        assert!(after_append.contains("# keep comment"));
+
+        // Create absent top-level, nested table, and inline table arrays.
+        append(&mut doc, "topics", &[json!("docs")]).unwrap();
+        append(&mut doc, "meta.tags", &[json!("featured")]).unwrap();
+        append(&mut doc, "inline_meta.labels", &[json!("b"), json!("a")]).unwrap();
+        append(&mut doc, "inline_meta.extra", &[json!(1)]).unwrap();
+        assert_eq!(get(&doc, "topics"), Some(json!(["docs"])));
+        assert_eq!(get(&doc, "meta.tags"), Some(json!(["featured"])));
+        assert_eq!(get(&doc, "inline_meta.labels"), Some(json!(["a", "b"])));
+        assert_eq!(get(&doc, "inline_meta.extra"), Some(json!([1])));
+
+        // Remove first element cleanly without leading stray space + remove inline array item.
+        remove_from_array(&mut doc, "tags", &[json!("rust"), json!("draft")]).unwrap();
+        assert_eq!(get(&doc, "tags"), Some(json!(["cli", "md"])));
+        let serialized = serialize_toml(&doc);
+        assert!(
+            serialized.contains("tags = [\"cli\", \"md\"] # keep comment"),
+            "unexpected TOML output: {serialized}"
+        );
+
+        remove_from_array(&mut doc, "inline_meta.labels", &[json!("a")]).unwrap();
+        assert_eq!(get(&doc, "inline_meta.labels"), Some(json!(["b"])));
+
+        // Missing keys and missing intermediate tables are no-ops.
+        remove_from_array(&mut doc, "missing", &[json!("x")]).unwrap();
+        remove_from_array(&mut doc, "no_table.tags", &[json!("x")]).unwrap();
+        remove_from_array(&mut doc, "inline_meta.missing", &[json!("x")]).unwrap();
+        assert_eq!(get(&doc, "no_table"), None);
+
+        // Non-array, non-mapping, and null-value errors.
+        assert!(matches!(
+            append(&mut doc, "title", &[json!("x")]),
+            Err(FrontmatterError::NotAnArray { .. })
+        ));
+        assert!(matches!(
+            remove_from_array(&mut doc, "title", &[json!("x")]),
+            Err(FrontmatterError::NotAnArray { .. })
+        ));
+        assert!(matches!(
+            append(&mut doc, "title.tags", &[json!("x")]),
+            Err(FrontmatterError::NotAMapping { .. })
+        ));
+        assert!(matches!(
+            remove_from_array(&mut doc, "title.tags", &[json!("x")]),
+            Err(FrontmatterError::NotAMapping { .. })
+        ));
+        assert!(matches!(
+            append(&mut doc, "tags", &[json!(null)]),
+            Err(FrontmatterError::UnsupportedValue { .. })
+        ));
     }
 }

@@ -1,6 +1,6 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH mdfm 1  "mdfm 0.1.0" 
+.TH mdfm 1  "mdfm v0.1.0" 
 .SH NAME
 mdfm \- jq for Markdown frontmatter: query, mutate, delete, and validate YAML and TOML frontmatter
 .SH SYNOPSIS
@@ -38,7 +38,7 @@ plain
 .RE
 .TP
 \fB\-\-where\fR \fI<EXPR>\fR
-Optional filter expression (e.g. \*(Aqdraft == true\*(Aq, \*(Aqauthor.name == "Nick"\*(Aq, \*(Aqtags contains "rust"\*(Aq)
+Optional filter expression (e.g. \*(Aqdraft == true\*(Aq, \*(Aqauthor.name == "Nick"\*(Aq, \*(Aq`prep time` != null\*(Aq, \*(Aqmeta["prep time"] == "5m"\*(Aq)
 .TP
 \fB\-C\fR, \fB\-\-config\fR \fI<CONFIG>\fR
 Path to explicit configuration file override (TOML, YAML, or JSON)
@@ -54,7 +54,7 @@ mdfm\-get(1)
 Query a frontmatter key (supports dot paths like author.name) across Markdown files
 .TP
 mdfm\-set(1)
-Update or insert frontmatter keys (creates frontmatter using default_format if absent)
+Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)
 .TP
 mdfm\-del(1)
 Delete one or more keys from frontmatter
@@ -74,6 +74,6 @@ Check for and install the latest mdfm release from GitHub
 mdfm\-help(1)
 Print this message or the help of the given subcommand(s)
 .SH VERSION
-v0.1.0
+vv0.1.0
 .SH AUTHORS
 Nicholas Wilde

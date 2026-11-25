@@ -23,7 +23,7 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
         'mdfm' {
             [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Frontmatter format used when creating new frontmatter (yaml or toml)')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'Output presentation format (table, json, or plain)')
-            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''tags contains "rust"'')')
+            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''`prep time` != null'', ''meta["prep time"] == "5m"'')')
             [CompletionResult]::new('-C', '-C ', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
@@ -31,7 +31,7 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
             [CompletionResult]::new('-V', '-V ', [CompletionResultType]::ParameterName, 'Print version')
             [CompletionResult]::new('--version', '--version', [CompletionResultType]::ParameterName, 'Print version')
             [CompletionResult]::new('get', 'get', [CompletionResultType]::ParameterValue, 'Query a frontmatter key (supports dot paths like author.name) across Markdown files')
-            [CompletionResult]::new('set', 'set', [CompletionResultType]::ParameterValue, 'Update or insert frontmatter keys (creates frontmatter using default_format if absent)')
+            [CompletionResult]::new('set', 'set', [CompletionResultType]::ParameterValue, 'Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)')
             [CompletionResult]::new('del', 'del', [CompletionResultType]::ParameterValue, 'Delete one or more keys from frontmatter')
             [CompletionResult]::new('check', 'check', [CompletionResultType]::ParameterValue, 'Validate frontmatter against a JSON Schema')
             [CompletionResult]::new('completions', 'completions', [CompletionResultType]::ParameterValue, 'Generate shell completion scripts (bash, zsh, fish, powershell, elvish)')
@@ -43,7 +43,7 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
         'mdfm;get' {
             [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Frontmatter format used when creating new frontmatter (yaml or toml)')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'Output presentation format (table, json, or plain)')
-            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''tags contains "rust"'')')
+            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''`prep time` != null'', ''meta["prep time"] == "5m"'')')
             [CompletionResult]::new('-C', '-C ', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
@@ -53,7 +53,7 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
         'mdfm;set' {
             [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Frontmatter format used when creating new frontmatter (yaml or toml)')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'Output presentation format (table, json, or plain)')
-            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''tags contains "rust"'')')
+            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''`prep time` != null'', ''meta["prep time"] == "5m"'')')
             [CompletionResult]::new('-C', '-C ', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Preview changes without writing files to disk')
@@ -64,7 +64,7 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
         'mdfm;del' {
             [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Frontmatter format used when creating new frontmatter (yaml or toml)')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'Output presentation format (table, json, or plain)')
-            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''tags contains "rust"'')')
+            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''`prep time` != null'', ''meta["prep time"] == "5m"'')')
             [CompletionResult]::new('-C', '-C ', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Preview deletions without writing files to disk')
@@ -76,7 +76,7 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
             [CompletionResult]::new('--schema', '--schema', [CompletionResultType]::ParameterName, 'Path to JSON Schema file')
             [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Frontmatter format used when creating new frontmatter (yaml or toml)')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'Output presentation format (table, json, or plain)')
-            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''tags contains "rust"'')')
+            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''`prep time` != null'', ''meta["prep time"] == "5m"'')')
             [CompletionResult]::new('-C', '-C ', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
@@ -86,7 +86,7 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
         'mdfm;completions' {
             [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Frontmatter format used when creating new frontmatter (yaml or toml)')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'Output presentation format (table, json, or plain)')
-            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''tags contains "rust"'')')
+            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''`prep time` != null'', ''meta["prep time"] == "5m"'')')
             [CompletionResult]::new('-C', '-C ', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
@@ -96,7 +96,7 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
         'mdfm;man' {
             [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Frontmatter format used when creating new frontmatter (yaml or toml)')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'Output presentation format (table, json, or plain)')
-            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''tags contains "rust"'')')
+            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''`prep time` != null'', ''meta["prep time"] == "5m"'')')
             [CompletionResult]::new('-C', '-C ', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
@@ -107,7 +107,7 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
             [CompletionResult]::new('--version', '--version', [CompletionResultType]::ParameterName, 'Target a specific release version or tag (e.g. 0.1.0 or v0.1.0)')
             [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Frontmatter format used when creating new frontmatter (yaml or toml)')
             [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'Output presentation format (table, json, or plain)')
-            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''tags contains "rust"'')')
+            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''author.name == "Nick"'', ''`prep time` != null'', ''meta["prep time"] == "5m"'')')
             [CompletionResult]::new('-C', '-C ', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('--check', '--check', [CompletionResultType]::ParameterName, 'Check for available updates without installing')
@@ -119,7 +119,7 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
         }
         'mdfm;help' {
             [CompletionResult]::new('get', 'get', [CompletionResultType]::ParameterValue, 'Query a frontmatter key (supports dot paths like author.name) across Markdown files')
-            [CompletionResult]::new('set', 'set', [CompletionResultType]::ParameterValue, 'Update or insert frontmatter keys (creates frontmatter using default_format if absent)')
+            [CompletionResult]::new('set', 'set', [CompletionResultType]::ParameterValue, 'Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)')
             [CompletionResult]::new('del', 'del', [CompletionResultType]::ParameterValue, 'Delete one or more keys from frontmatter')
             [CompletionResult]::new('check', 'check', [CompletionResultType]::ParameterValue, 'Validate frontmatter against a JSON Schema')
             [CompletionResult]::new('completions', 'completions', [CompletionResultType]::ParameterValue, 'Generate shell completion scripts (bash, zsh, fish, powershell, elvish)')

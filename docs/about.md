@@ -21,7 +21,7 @@
 
 - **Body Untouched Verbatim:** `mdfm` never parses or reformats the Markdown body after the closing frontmatter delimiter.
 - **Horizontal Rules Stay Safe:** An unclosed opening `---` (such as a Markdown thematic break at the top of a file) is treated as body-only content rather than malformed frontmatter.
-- **No-Op Write Avoidance:** `set` and `del` skip writing files whose rendered output is byte-identical to the original content. See [Security](./security.md) and [Configuration](./configuration.md) for details.
+- **No-Op Write Avoidance:** `set` skips rewriting files when frontmatter values are semantically unchanged (preserving existing YAML/TOML formatting), and `del` skips files when no target keys are removed. See [Security](./security.md) and [Configuration](./configuration.md) for details.
 
 [1]: https://github.com/toml-rs/toml
 [2]: https://github.com/Stranger6667/jsonschema

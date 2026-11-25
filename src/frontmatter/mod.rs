@@ -83,6 +83,9 @@ pub enum FrontmatterError {
     #[error("cannot traverse non-mapping key '{key}' in path '{path}'")]
     NotAMapping { key: String, path: String },
 
+    #[error("key '{path}' is not an array")]
+    NotAnArray { path: String },
+
     #[error("unsupported value for {format} frontmatter: {reason}")]
     UnsupportedValue { format: Format, reason: String },
 }
@@ -162,6 +165,40 @@ impl FrontmatterData {
         match self {
             Self::Yaml(mapping) => yaml::del(mapping, path),
             Self::Toml(doc) => toml::del(doc, path),
+        }
+    }
+
+    /// Append item(s) to an array at a dot-separated key path, deduplicating existing entries.
+    ///
+    /// If `value` is a JSON array, each element is appended in order.
+    /// Creates intermediate mappings/tables and a new array if the key is absent.
+    pub fn append(&mut self, path: &str, value: JsonValue) -> Result<(), FrontmatterError> {
+        let items = match value {
+            JsonValue::Array(items) => items,
+            single => vec![single],
+        };
+        match self {
+            Self::Yaml(mapping) => yaml::append(mapping, path, &items),
+            Self::Toml(doc) => toml::append(doc, path, &items),
+        }
+    }
+
+    /// Remove matching item(s) from an array at a dot-separated key path.
+    ///
+    /// If `value` is a JSON array, every matching element is removed.
+    /// Missing intermediate keys or target keys are treated as no-ops.
+    pub fn remove_from_array(
+        &mut self,
+        path: &str,
+        value: JsonValue,
+    ) -> Result<(), FrontmatterError> {
+        let items = match value {
+            JsonValue::Array(items) => items,
+            single => vec![single],
+        };
+        match self {
+            Self::Yaml(mapping) => yaml::remove_from_array(mapping, path, &items),
+            Self::Toml(doc) => toml::remove_from_array(doc, path, &items),
         }
     }
 
@@ -372,6 +409,13 @@ impl<'a> SplitDocument<'a> {
             if trailing_newline {
                 out.push_str(eol);
             }
+            if self.frontmatter.is_none()
+                && !self.body.is_empty()
+                && !self.body.starts_with('\n')
+                && !self.body.starts_with("\r\n")
+            {
+                out.push_str(eol);
+            }
         }
 
         out.push_str(self.body);
@@ -578,7 +622,7 @@ role = \"writer\"
 
         assert_eq!(
             rendered,
-            "+++\r\ntitle = \"Plain Note\"\r\n+++\r\n# Plain Note\r\n\r\nNo frontmatter yet.\r\n"
+            "+++\r\ntitle = \"Plain Note\"\r\n+++\r\n\r\n# Plain Note\r\n\r\nNo frontmatter yet.\r\n"
         );
     }
 
@@ -629,15 +673,66 @@ role = \"writer\"
         let rendered = doc.render(Some(&new_toml)).unwrap();
         assert_eq!(rendered, "+++\ntitle = \"New\"\n+++\nBody\n");
 
-        // Rendering YAML FrontmatterData into a body-only document uses default `---` delimiter.
+        // Rendering YAML FrontmatterData into a body-only document uses default `---` delimiter
+        // and inserts a blank line before non-empty body content.
         let plain = split("# Hello\n");
         let rendered_yaml = plain.render(Some(&y)).unwrap();
-        assert_eq!(rendered_yaml, "---\na: 1\n---\n# Hello\n");
+        assert_eq!(rendered_yaml, "---\na: 1\n---\n\n# Hello\n");
 
         // normalize_frontmatter_lines appends EOL when serialized text lacks trailing newline.
         assert_eq!(
             normalize_frontmatter_lines("a = 1", LineEnding::Lf),
             "a = 1\n"
+        );
+    }
+
+    #[test]
+    fn create_frontmatter_blank_line_edge_cases() {
+        let mut fm = FrontmatterData::empty(Format::Yaml);
+        fm.set("comments", json!(true)).unwrap();
+
+        // LF body without leading blank line gets one inserted.
+        let lf = split("# Heading\nBody\n");
+        assert_eq!(
+            lf.render(Some(&fm)).unwrap(),
+            "---\ncomments: true\n---\n\n# Heading\nBody\n"
+        );
+
+        // CRLF body without leading blank line gets CRLF blank line inserted.
+        let crlf = split("# Heading\r\nBody\r\n");
+        assert_eq!(
+            crlf.render(Some(&fm)).unwrap(),
+            "---\r\ncomments: true\r\n---\r\n\r\n# Heading\r\nBody\r\n"
+        );
+
+        // Empty body does not emit an extra blank line.
+        let empty = split("");
+        assert_eq!(
+            empty.render(Some(&fm)).unwrap(),
+            "---\ncomments: true\n---\n"
+        );
+
+        // Body already starting with LF blank line does not duplicate blank line.
+        let lf_spaced = split("\n# Heading\n");
+        assert_eq!(
+            lf_spaced.render(Some(&fm)).unwrap(),
+            "---\ncomments: true\n---\n\n# Heading\n"
+        );
+
+        // Body already starting with CRLF blank line does not duplicate blank line.
+        let crlf_spaced = split("\r\n# Heading\r\n");
+        assert_eq!(
+            crlf_spaced.render(Some(&fm)).unwrap(),
+            "---\r\ncomments: true\r\n---\r\n\r\n# Heading\r\n"
+        );
+
+        // Existing frontmatter without blank line after closing delimiter keeps spacing verbatim.
+        let existing = split("---\ntitle: Old\n---\n# Heading\n");
+        let mut existing_fm = existing.parse_frontmatter().unwrap().unwrap();
+        existing_fm.set("title", json!("New")).unwrap();
+        assert_eq!(
+            existing.render(Some(&existing_fm)).unwrap(),
+            "---\ntitle: New\n---\n# Heading\n"
         );
     }
 }
