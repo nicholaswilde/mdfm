@@ -36,6 +36,8 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
             [CompletionResult]::new('get', 'get', [CompletionResultType]::ParameterValue, 'Query one or more frontmatter keys (dot paths, comma-separated, -k/--key, or ''.'' for full frontmatter)')
             [CompletionResult]::new('set', 'set', [CompletionResultType]::ParameterValue, 'Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)')
             [CompletionResult]::new('del', 'del', [CompletionResultType]::ParameterValue, 'Delete one or more keys from frontmatter')
+            [CompletionResult]::new('mv', 'mv', [CompletionResultType]::ParameterValue, 'Rename or merge a frontmatter key across files')
+            [CompletionResult]::new('rename', 'rename', [CompletionResultType]::ParameterValue, 'Rename or merge a frontmatter key across files')
             [CompletionResult]::new('check', 'check', [CompletionResultType]::ParameterValue, 'Validate frontmatter against a JSON Schema')
             [CompletionResult]::new('completions', 'completions', [CompletionResultType]::ParameterValue, 'Generate shell completion scripts (bash, zsh, fish, powershell, elvish)')
             [CompletionResult]::new('man', 'man', [CompletionResultType]::ParameterValue, 'Generate UNIX roff man page')
@@ -66,6 +68,7 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('--ext', '--ext', [CompletionResultType]::ParameterName, 'File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Preview changes without writing files to disk')
+            [CompletionResult]::new('--diff', '--diff', [CompletionResultType]::ParameterName, 'Show unified diff of frontmatter edits')
             [CompletionResult]::new('-l', '-l', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
             [CompletionResult]::new('--files-only', '--files-only', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
@@ -80,6 +83,41 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
             [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
             [CompletionResult]::new('--ext', '--ext', [CompletionResultType]::ParameterName, 'File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)')
             [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Preview deletions without writing files to disk')
+            [CompletionResult]::new('--diff', '--diff', [CompletionResultType]::ParameterName, 'Show unified diff of frontmatter deletions')
+            [CompletionResult]::new('-l', '-l', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
+            [CompletionResult]::new('--files-only', '--files-only', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'mdfm;mv' {
+            [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Frontmatter format used when creating new frontmatter (yaml or toml)')
+            [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'Output presentation format (table, json, plain, or files)')
+            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''not has_frontmatter'', ''frontmatter_format == "toml"'', ''`prep time` != null'')')
+            [CompletionResult]::new('-C', '-C ', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
+            [CompletionResult]::new('--ext', '--ext', [CompletionResultType]::ParameterName, 'File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)')
+            [CompletionResult]::new('--merge', '--merge', [CompletionResultType]::ParameterName, 'Merge source into destination when destination already exists (deduplicates arrays, shallow-merges mappings)')
+            [CompletionResult]::new('--overwrite', '--overwrite', [CompletionResultType]::ParameterName, 'Overwrite destination key if it already exists')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Preview renames without writing files to disk')
+            [CompletionResult]::new('--diff', '--diff', [CompletionResultType]::ParameterName, 'Show unified diff of frontmatter edits')
+            [CompletionResult]::new('-l', '-l', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
+            [CompletionResult]::new('--files-only', '--files-only', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
+            [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
+            [CompletionResult]::new('--help', '--help', [CompletionResultType]::ParameterName, 'Print help')
+            break
+        }
+        'mdfm;rename' {
+            [CompletionResult]::new('--format', '--format', [CompletionResultType]::ParameterName, 'Frontmatter format used when creating new frontmatter (yaml or toml)')
+            [CompletionResult]::new('--output', '--output', [CompletionResultType]::ParameterName, 'Output presentation format (table, json, plain, or files)')
+            [CompletionResult]::new('--where', '--where', [CompletionResultType]::ParameterName, 'Optional filter expression (e.g. ''draft == true'', ''not has_frontmatter'', ''frontmatter_format == "toml"'', ''`prep time` != null'')')
+            [CompletionResult]::new('-C', '-C ', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
+            [CompletionResult]::new('--config', '--config', [CompletionResultType]::ParameterName, 'Path to explicit configuration file override (TOML, YAML, or JSON)')
+            [CompletionResult]::new('--ext', '--ext', [CompletionResultType]::ParameterName, 'File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)')
+            [CompletionResult]::new('--merge', '--merge', [CompletionResultType]::ParameterName, 'Merge source into destination when destination already exists (deduplicates arrays, shallow-merges mappings)')
+            [CompletionResult]::new('--overwrite', '--overwrite', [CompletionResultType]::ParameterName, 'Overwrite destination key if it already exists')
+            [CompletionResult]::new('--dry-run', '--dry-run', [CompletionResultType]::ParameterName, 'Preview renames without writing files to disk')
+            [CompletionResult]::new('--diff', '--diff', [CompletionResultType]::ParameterName, 'Show unified diff of frontmatter edits')
             [CompletionResult]::new('-l', '-l', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
             [CompletionResult]::new('--files-only', '--files-only', [CompletionResultType]::ParameterName, 'Print only matching file paths, one per line (shorthand for --output files)')
             [CompletionResult]::new('-h', '-h', [CompletionResultType]::ParameterName, 'Print help')
@@ -150,6 +188,7 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
             [CompletionResult]::new('get', 'get', [CompletionResultType]::ParameterValue, 'Query one or more frontmatter keys (dot paths, comma-separated, -k/--key, or ''.'' for full frontmatter)')
             [CompletionResult]::new('set', 'set', [CompletionResultType]::ParameterValue, 'Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)')
             [CompletionResult]::new('del', 'del', [CompletionResultType]::ParameterValue, 'Delete one or more keys from frontmatter')
+            [CompletionResult]::new('mv', 'mv', [CompletionResultType]::ParameterValue, 'Rename or merge a frontmatter key across files')
             [CompletionResult]::new('check', 'check', [CompletionResultType]::ParameterValue, 'Validate frontmatter against a JSON Schema')
             [CompletionResult]::new('completions', 'completions', [CompletionResultType]::ParameterValue, 'Generate shell completion scripts (bash, zsh, fish, powershell, elvish)')
             [CompletionResult]::new('man', 'man', [CompletionResultType]::ParameterValue, 'Generate UNIX roff man page')
@@ -164,6 +203,9 @@ Register-ArgumentCompleter -Native -CommandName 'mdfm' -ScriptBlock {
             break
         }
         'mdfm;help;del' {
+            break
+        }
+        'mdfm;help;mv' {
             break
         }
         'mdfm;help;check' {

@@ -56,6 +56,15 @@ A ready-to-use template is available at [`assets/config.example.toml`](https://g
 
     # Suppress passing rows in `mdfm check` and print a compact summary line
     errors_only = false
+
+    # Per-glob JSON Schemas (first matching pattern wins; unmatched files fall back to `schema`)
+    [[schemas]]
+    pattern = "docs/reference/**"
+    schema = ".mdfm-reference-schema.json"
+
+    [[schemas]]
+    patterns = ["cook/**/*.cook", "recipes/*.cook"]
+    schema = ".mdfm-cook-schema.json"
     ```
 
 === "YAML (`config.yaml`)"
@@ -99,6 +108,7 @@ A ready-to-use template is available at [`assets/config.example.toml`](https://g
 | `default_format` | String | `"yaml"` | `"yaml"`, `"toml"` | Frontmatter format used when `set` creates frontmatter on a body-only file |
 | `output` | String | `"table"` | `"table"`, `"json"`, `"plain"`, `"files"` | Output presentation format for `get`, `set`, `del`, and `check` |
 | `schema` | String (Path) | None | File path | Default JSON Schema file used by `mdfm check` |
+| `schemas` | Array of Tables | `[]` | `pattern` / `patterns` + `schema` | Ordered per-glob JSON Schema rules for `mdfm check` (overridden by CLI `--schema` / `MDFM_SCHEMA`) |
 | `ignore` | Array of Strings | `[]` | Glob patterns | Additional file/directory globs excluded during directory traversal |
 | `extensions` | Array of Strings | `["md", "markdown"]` | File extensions | File extensions matched during directory walks (case-insensitive, leading `.` optional) |
 | `errors_only` | Boolean | `false` | `true`, `false` | Hide passing files in `mdfm check` and print a compact summary (`<ok> ok, <failed> failed`) |

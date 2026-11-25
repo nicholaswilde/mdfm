@@ -9,8 +9,9 @@ mdfm [OPTIONS] <COMMAND>
 | Command | Description | Example |
 | :--- | :--- | :--- |
 | `get` | Query a frontmatter key (supports dot paths) across Markdown files | `mdfm get author.name docs/` |
-| `set` | Update or insert frontmatter keys (creates frontmatter if absent) | `mdfm set draft=false posts/ --dry-run` |
-| `del` | Delete one or more keys from frontmatter | `mdfm del draft author.bio posts/` |
+| `set` | Update or insert frontmatter keys (creates frontmatter if absent) | `mdfm set draft=false posts/ --dry-run --diff` |
+| `del` | Delete one or more keys from frontmatter | `mdfm del draft author.bio posts/ --dry-run --diff` |
+| `mv` (`rename`) | Atomically rename or merge frontmatter keys across files | `mdfm mv --merge tag tags docs/` |
 | `check` | Validate frontmatter against a JSON Schema | `mdfm check --schema schema.json posts/` |
 | `completions` | Generate shell completion script (`bash`, `zsh`, `fish`, `powershell`, `elvish`) | `mdfm completions zsh` |
 | `man` | Output UNIX roff man page | `mdfm man > assets/mdfm.1` |
@@ -62,8 +63,8 @@ Files without frontmatter are skipped (unless matching a `has_frontmatter` / `fr
 Pass one or more `KEY=VALUE`, `KEY+=VALUE`, or `KEY-=VALUE` mutations followed by optional file or directory paths (defaults to `.`):
 
 ```bash
-# Preview changes without modifying files on disk
-mdfm set draft=false 'tags=["rust","cli"]' posts/ --dry-run
+# Preview changes as a unified diff without modifying files on disk
+mdfm set draft=false 'tags=["rust","cli"]' posts/ --dry-run --diff
 
 # Apply updates in-place
 mdfm set draft=false 'tags=["rust","cli"]' posts/
@@ -111,8 +112,8 @@ Mutate YAML sequences and TOML arrays without overwriting the entire list:
 Pass one or more key paths followed by optional file or directory paths (defaults to `.`):
 
 ```bash
-# Preview deletions without modifying files
-mdfm del draft legacy_id posts/ --dry-run
+# Preview deletions as a unified diff without modifying files
+mdfm del draft legacy_id posts/ --dry-run --diff
 
 # Delete top-level and nested keys
 mdfm del draft author.bio posts/
@@ -122,6 +123,26 @@ mdfm --where 'draft == false' del reviewer_notes posts/
 ```
 
 The first positional argument is always parsed as a key path. Subsequent arguments remain keys until an argument exists on disk or resembles a filesystem path (`.`, `..`, contains `/` or `\`, or matches a configured extension such as `.md`/`.markdown`). Files without frontmatter are skipped.
+
+## :twisted_rightwards_arrows: Renaming & Merging Keys (`mv` / `rename`)
+
+Atomically rename or merge a frontmatter key (`<OLD_KEY>` -> `<NEW_KEY>`) across YAML and TOML files (supporting nested dot paths, `--dry-run`, `--diff`, and `--where`):
+
+```bash
+# Rename a nested key across a directory (preview unified diff first)
+mdfm mv author.full_name author.name docs/ --dry-run --diff
+mdfm rename author.full_name author.name docs/
+
+# Merge typo key `tag` into `tags` (deduplicating arrays) and delete `tag`
+mdfm mv --merge tag tags docs/
+
+# Replace an existing destination key unconditionally
+mdfm mv --overwrite legacy_title title docs/
+```
+
+- **Conflict safety:** If `<NEW_KEY>` already exists, `mv` exits with an error unless `--merge` or `--overwrite` is passed.
+- **`--merge` rules:** Deduplicates union of arrays (including scalar-into-array merges), shallow-merges mappings (preserving existing destination subkeys), and errors on incompatible/conflicting scalar types.
+- **Unified diff (`--diff`):** Available on `set`, `del`, and `mv`. In `table` and `plain` modes, prints unified diffs for changed files only (zero output for unchanged files); in `json` mode, attaches a `"diff"` string to changed entries.
 
 ## :mag_right: Filtering Files (`--where`)
 

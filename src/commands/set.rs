@@ -7,7 +7,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::cli::OutputFormat;
-use crate::commands::{build_table, collect_markdown_files};
+use crate::commands::{
+    build_table, collect_markdown_files, frontmatter_prefix, render_unified_diff,
+};
 use crate::config::ResolvedConfig;
 use crate::frontmatter::filter::{FilterContext, FilterExpr};
 use crate::frontmatter::{self, Format, FrontmatterData};
@@ -19,6 +21,8 @@ struct SetEntry {
     dry_run: bool,
     created_frontmatter: bool,
     format: Format,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    diff: Option<String>,
 }
 
 /// Parse a raw CLI value string into a typed JSON value:
@@ -124,6 +128,7 @@ pub fn parse_set_args(args: &[String]) -> Result<(Vec<SetAssignment>, Vec<PathBu
 pub fn execute(
     args: &[String],
     dry_run: bool,
+    show_diff: bool,
     filter: Option<&FilterExpr>,
     config: &ResolvedConfig,
     out: &mut dyn Write,
@@ -199,24 +204,37 @@ pub fn execute(
             Some(before) => after_json != before,
         };
 
-        let changed = if semantically_changed {
+        let (changed, rendered_opt) = if semantically_changed {
             let rendered = doc.render(Some(&fm))?;
             let bytes_changed = rendered != original;
             if bytes_changed && !dry_run {
                 fs::write(&path, &rendered)
                     .with_context(|| format!("Failed to write '{}'", path.display()))?;
             }
-            bytes_changed
+            (bytes_changed, bytes_changed.then_some(rendered))
         } else {
-            false
+            (false, None)
+        };
+
+        let file_str = path.display().to_string();
+        let diff_text = if show_diff {
+            rendered_opt.as_deref().map(|rendered| {
+                let before_fm = frontmatter_prefix(&original, doc.body.len());
+                let after_fm = frontmatter_prefix(rendered, doc.body.len());
+                let use_color = !matches!(config.output, OutputFormat::Json);
+                render_unified_diff(&file_str, before_fm, after_fm, use_color)
+            })
+        } else {
+            None
         };
 
         results.push(SetEntry {
-            file: path.display().to_string(),
+            file: file_str,
             changed,
             dry_run,
             created_frontmatter,
             format: fm.format(),
+            diff: diff_text,
         });
     }
 
@@ -228,6 +246,15 @@ pub fn execute(
         }
         OutputFormat::Json => {
             writeln!(out, "{}", serde_json::to_string_pretty(&results)?)?;
+        }
+        OutputFormat::Plain | OutputFormat::Table if show_diff => {
+            for r in &results {
+                if let Some(ref d) = r.diff {
+                    if !d.is_empty() {
+                        write!(out, "{d}")?;
+                    }
+                }
+            }
         }
         OutputFormat::Plain => {
             for r in &results {
@@ -396,6 +423,7 @@ mod tests {
                 plain.to_str().unwrap().to_string(),
             ],
             true,
+            false,
             None,
             &table_cfg,
             &mut out,
@@ -409,6 +437,7 @@ mod tests {
         let mut out = Vec::new();
         execute(
             &["draft=true".to_string(), post.to_str().unwrap().to_string()],
+            false,
             false,
             None,
             &table_cfg,
@@ -426,6 +455,7 @@ mod tests {
                 dir.path().to_str().unwrap().to_string(),
             ],
             false,
+            false,
             Some(&filter),
             &table_cfg,
             &mut out,
@@ -442,6 +472,7 @@ mod tests {
                 dir.path().to_str().unwrap().to_string(),
             ],
             true,
+            false,
             Some(&filter_match),
             &table_cfg,
             &mut out,
@@ -459,6 +490,7 @@ mod tests {
                 post.to_str().unwrap().to_string()
             ],
             false,
+            false,
             None,
             &table_cfg,
             &mut err_out
@@ -470,6 +502,7 @@ mod tests {
         fs::write(&bad, "---\n[broken\n---\n").unwrap();
         assert!(execute(
             &["draft=false".to_string(), bad.to_str().unwrap().to_string()],
+            false,
             false,
             None,
             &table_cfg,
@@ -511,6 +544,7 @@ tags:
                     yaml_file.to_str().unwrap().to_string(),
                 ],
                 dry_run,
+                false,
                 None,
                 &json_cfg,
                 &mut out,
@@ -530,6 +564,7 @@ tags:
                 "comments=false".to_string(),
                 yaml_file.to_str().unwrap().to_string(),
             ],
+            false,
             false,
             None,
             &json_cfg,
@@ -552,6 +587,7 @@ tags:
                 "comments=true".to_string(),
                 toml_file.to_str().unwrap().to_string(),
             ],
+            false,
             false,
             None,
             &json_cfg,
@@ -596,6 +632,7 @@ tags:
                 plain_file.to_str().unwrap().to_string(),
             ],
             false,
+            false,
             None,
             &json_cfg,
             &mut out,
@@ -614,6 +651,7 @@ tags:
                 yaml_file.to_str().unwrap().to_string(),
             ],
             false,
+            false,
             None,
             &json_cfg,
             &mut out,
@@ -631,6 +669,7 @@ tags:
                 "tags-=draft".to_string(),
                 yaml_file.to_str().unwrap().to_string(),
             ],
+            false,
             false,
             None,
             &json_cfg,
@@ -654,6 +693,7 @@ tags:
                 plain_file.to_str().unwrap().to_string(),
             ],
             false,
+            false,
             None,
             &json_cfg,
             &mut out,
@@ -673,6 +713,7 @@ tags:
                 yaml_file.to_str().unwrap().to_string(),
             ],
             false,
+            false,
             None,
             &json_cfg,
             &mut err_out,
@@ -683,6 +724,7 @@ tags:
                 "title-=oops".to_string(),
                 yaml_file.to_str().unwrap().to_string(),
             ],
+            false,
             false,
             None,
             &json_cfg,

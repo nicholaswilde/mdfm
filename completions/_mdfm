@@ -62,6 +62,7 @@ _arguments "${_arguments_options[@]}" : \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
 '--dry-run[Preview changes without writing files to disk]' \
+'--diff[Show unified diff of frontmatter edits]' \
 '-l[Print only matching file paths, one per line (shorthand for --output files)]' \
 '--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
 '-h[Print help]' \
@@ -78,11 +79,54 @@ _arguments "${_arguments_options[@]}" : \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
 '--dry-run[Preview deletions without writing files to disk]' \
+'--diff[Show unified diff of frontmatter deletions]' \
 '-l[Print only matching file paths, one per line (shorthand for --output files)]' \
 '--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '*::args -- Frontmatter key paths to delete followed by optional file or directory paths (defaults to '\''.'\''):_default' \
+&& ret=0
+;;
+(mv)
+_arguments "${_arguments_options[@]}" : \
+'--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
+'--output=[Output presentation format (table, json, plain, or files)]:OUTPUT:(table json plain files)' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''not has_frontmatter'\'', '\''frontmatter_format == "toml"'\'', '\''\`prep time\` != null'\'')]:EXPR:_default' \
+'-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
+'(--overwrite)--merge[Merge source into destination when destination already exists (deduplicates arrays, shallow-merges mappings)]' \
+'(--merge)--overwrite[Overwrite destination key if it already exists]' \
+'--dry-run[Preview renames without writing files to disk]' \
+'--diff[Show unified diff of frontmatter edits]' \
+'-l[Print only matching file paths, one per line (shorthand for --output files)]' \
+'--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':old_key -- Source dot-separated frontmatter key path (e.g. tag, author.full_name):_default' \
+':new_key -- Destination dot-separated frontmatter key path (e.g. tags, author.name):_default' \
+'*::paths -- Files or directories to process (defaults to current directory '\''.'\''):_files' \
+&& ret=0
+;;
+(rename)
+_arguments "${_arguments_options[@]}" : \
+'--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
+'--output=[Output presentation format (table, json, plain, or files)]:OUTPUT:(table json plain files)' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''not has_frontmatter'\'', '\''frontmatter_format == "toml"'\'', '\''\`prep time\` != null'\'')]:EXPR:_default' \
+'-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
+'(--overwrite)--merge[Merge source into destination when destination already exists (deduplicates arrays, shallow-merges mappings)]' \
+'(--merge)--overwrite[Overwrite destination key if it already exists]' \
+'--dry-run[Preview renames without writing files to disk]' \
+'--diff[Show unified diff of frontmatter edits]' \
+'-l[Print only matching file paths, one per line (shorthand for --output files)]' \
+'--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
+'-h[Print help]' \
+'--help[Print help]' \
+':old_key -- Source dot-separated frontmatter key path (e.g. tag, author.full_name):_default' \
+':new_key -- Destination dot-separated frontmatter key path (e.g. tags, author.name):_default' \
+'*::paths -- Files or directories to process (defaults to current directory '\''.'\''):_files' \
 && ret=0
 ;;
 (check)
@@ -175,6 +219,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(mv)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (check)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -210,6 +258,8 @@ _mdfm_commands() {
 'get:Query one or more frontmatter keys (dot paths, comma-separated, -k/--key, or '\''.'\'' for full frontmatter)' \
 'set:Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)' \
 'del:Delete one or more keys from frontmatter' \
+'mv:Rename or merge a frontmatter key across files' \
+'rename:Rename or merge a frontmatter key across files' \
 'check:Validate frontmatter against a JSON Schema' \
 'completions:Generate shell completion scripts (bash, zsh, fish, powershell, elvish)' \
 'man:Generate UNIX roff man page' \
@@ -244,6 +294,7 @@ _mdfm__subcmd__help_commands() {
 'get:Query one or more frontmatter keys (dot paths, comma-separated, -k/--key, or '\''.'\'' for full frontmatter)' \
 'set:Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)' \
 'del:Delete one or more keys from frontmatter' \
+'mv:Rename or merge a frontmatter key across files' \
 'check:Validate frontmatter against a JSON Schema' \
 'completions:Generate shell completion scripts (bash, zsh, fish, powershell, elvish)' \
 'man:Generate UNIX roff man page' \
@@ -282,6 +333,11 @@ _mdfm__subcmd__help__subcmd__man_commands() {
     local commands; commands=()
     _describe -t commands 'mdfm help man commands' commands "$@"
 }
+(( $+functions[_mdfm__subcmd__help__subcmd__mv_commands] )) ||
+_mdfm__subcmd__help__subcmd__mv_commands() {
+    local commands; commands=()
+    _describe -t commands 'mdfm help mv commands' commands "$@"
+}
 (( $+functions[_mdfm__subcmd__help__subcmd__set_commands] )) ||
 _mdfm__subcmd__help__subcmd__set_commands() {
     local commands; commands=()
@@ -296,6 +352,11 @@ _mdfm__subcmd__help__subcmd__update_commands() {
 _mdfm__subcmd__man_commands() {
     local commands; commands=()
     _describe -t commands 'mdfm man commands' commands "$@"
+}
+(( $+functions[_mdfm__subcmd__mv_commands] )) ||
+_mdfm__subcmd__mv_commands() {
+    local commands; commands=()
+    _describe -t commands 'mdfm mv commands' commands "$@"
 }
 (( $+functions[_mdfm__subcmd__set_commands] )) ||
 _mdfm__subcmd__set_commands() {

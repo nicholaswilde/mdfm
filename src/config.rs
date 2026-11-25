@@ -56,12 +56,29 @@ pub fn normalize_extensions(raw: &[String]) -> Result<Vec<String>> {
     Ok(normalized)
 }
 
+/// Raw per-glob schema mapping entry loaded from configuration (`[[schemas]]`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SchemaRuleConfig {
+    pub pattern: Option<String>,
+    pub patterns: Option<Vec<String>>,
+    pub schema: PathBuf,
+}
+
+/// Resolved per-glob schema rule with normalized patterns, resolved schema path, and base dir.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedSchemaRule {
+    pub patterns: Vec<String>,
+    pub schema: PathBuf,
+    pub base_dir: Option<PathBuf>,
+}
+
 /// Representation of values loaded from a configuration file (`.mdfm.toml` or global config).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConfigFile {
     pub default_format: Option<Format>,
     pub output: Option<OutputFormat>,
     pub schema: Option<PathBuf>,
+    pub schemas: Option<Vec<SchemaRuleConfig>>,
     pub ignore: Option<Vec<String>>,
     pub extensions: Option<Vec<String>>,
     pub errors_only: Option<bool>,
@@ -171,6 +188,7 @@ pub struct ResolvedConfig {
     pub default_format: Format,
     pub output: OutputFormat,
     pub schema: Option<PathBuf>,
+    pub schemas: Vec<ResolvedSchemaRule>,
     pub ignore: Vec<String>,
     pub extensions: Vec<String>,
     pub errors_only: bool,
@@ -182,6 +200,7 @@ impl Default for ResolvedConfig {
             default_format: Format::Yaml,
             output: OutputFormat::Table,
             schema: None,
+            schemas: Vec::new(),
             ignore: Vec::new(),
             extensions: default_extensions(),
             errors_only: false,
@@ -231,6 +250,43 @@ fn resolve_schema_relative_to_config(schema: PathBuf, config_path: &Path) -> Pat
         }
     }
     schema
+}
+
+fn resolve_schema_rules(
+    rules: &[SchemaRuleConfig],
+    config_path: &Path,
+) -> Result<Vec<ResolvedSchemaRule>> {
+    let base_dir = config_path.parent().map(Path::to_path_buf);
+    let mut resolved = Vec::with_capacity(rules.len());
+    for entry in rules {
+        let mut patterns = Vec::new();
+        if let Some(ref single) = entry.pattern {
+            let trimmed = single.trim();
+            if !trimmed.is_empty() {
+                patterns.push(trimmed.to_string());
+            }
+        }
+        if let Some(ref list) = entry.patterns {
+            for pat in list {
+                let trimmed = pat.trim();
+                if !trimmed.is_empty() && !patterns.iter().any(|p| p == trimmed) {
+                    patterns.push(trimmed.to_string());
+                }
+            }
+        }
+        if patterns.is_empty() {
+            anyhow::bail!(
+                "[[schemas]] entry for '{}' must specify a non-empty 'pattern' or 'patterns'",
+                entry.schema.display()
+            );
+        }
+        resolved.push(ResolvedSchemaRule {
+            patterns,
+            schema: resolve_schema_relative_to_config(entry.schema.clone(), config_path),
+            base_dir: base_dir.clone(),
+        });
+    }
+    Ok(resolved)
 }
 
 /// Resolve configuration using the current working directory.
@@ -319,12 +375,15 @@ pub fn resolve_configuration_from_dir(
             .unwrap_or_default()
     };
 
-    // 3. schema: CLI > MDFM_SCHEMA > local > global > None
+    // 3. schema & [[schemas]]: explicit CLI --schema / MDFM_SCHEMA overrides all [[schemas]] rules
+    let mut explicit_schema_override = false;
     let schema = if let Some(s) = overrides.schema {
+        explicit_schema_override = true;
         Some(s.to_path_buf())
     } else if let Ok(env_schema) = std::env::var("MDFM_SCHEMA") {
         let trimmed = env_schema.trim();
         if !trimmed.is_empty() {
+            explicit_schema_override = true;
             Some(PathBuf::from(trimmed))
         } else {
             None
@@ -344,6 +403,22 @@ pub fn resolve_configuration_from_dir(
                         .map(|s| resolve_schema_relative_to_config(s, path))
                 })
             })
+    };
+
+    let schemas = if explicit_schema_override {
+        Vec::new()
+    } else if let Some((path, rules)) = local_cfg
+        .as_ref()
+        .and_then(|(p, c)| c.schemas.as_deref().map(|r| (p, r)))
+        .or_else(|| {
+            global_cfg
+                .as_ref()
+                .and_then(|(p, c)| c.schemas.as_deref().map(|r| (p, r)))
+        })
+    {
+        resolve_schema_rules(rules, path)?
+    } else {
+        Vec::new()
     };
 
     // 4. ignore: local > global > []
@@ -381,6 +456,7 @@ pub fn resolve_configuration_from_dir(
         default_format,
         output,
         schema,
+        schemas,
         ignore,
         extensions,
         errors_only,
@@ -755,5 +831,75 @@ errors_only = true
 
         let found = find_local_config(&sub).expect("should discover parent .mdfm.toml");
         assert_eq!(found, dir.path().join(".mdfm.toml"));
+    }
+
+    #[test]
+    fn resolve_per_glob_schemas_and_cli_override() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let env = EnvGuard::new(&["MDFM_CONFIG", "MDFM_SCHEMA", "XDG_CONFIG_HOME"]);
+        env.remove("MDFM_CONFIG");
+        env.remove("MDFM_SCHEMA");
+        env.remove("XDG_CONFIG_HOME");
+
+        let dir = tempfile::tempdir().unwrap();
+        let default_s = dir.path().join("default.json");
+        let ref_s = dir.path().join("ref.json");
+        let cook_s = dir.path().join("cook.json");
+        fs::write(&default_s, "{}").unwrap();
+        fs::write(&ref_s, "{}").unwrap();
+        fs::write(&cook_s, "{}").unwrap();
+
+        let cfg = dir.path().join(".mdfm.toml");
+        fs::write(
+            &cfg,
+            r#"
+schema = "default.json"
+
+[[schemas]]
+pattern = "docs/reference/**"
+schema = "ref.json"
+
+[[schemas]]
+patterns = ["cook/**/*.cook", "recipes/*.cook"]
+schema = "cook.json"
+"#,
+        )
+        .unwrap();
+
+        let resolved =
+            resolve_configuration_from_dir(dir.path(), &CliOverrides::default()).unwrap();
+        assert_eq!(resolved.schema, Some(default_s));
+        assert_eq!(resolved.schemas.len(), 2);
+        assert_eq!(resolved.schemas[0].patterns, vec!["docs/reference/**"]);
+        assert_eq!(resolved.schemas[0].schema, ref_s);
+        assert_eq!(
+            resolved.schemas[1].patterns,
+            vec!["cook/**/*.cook", "recipes/*.cook"]
+        );
+        assert_eq!(resolved.schemas[1].schema, cook_s);
+
+        // Explicit CLI `--schema` overrides all [[schemas]] rules.
+        let cli_override = resolve_configuration_from_dir(
+            dir.path(),
+            &CliOverrides {
+                schema: Some(Path::new("override.json")),
+                ..CliOverrides::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(cli_override.schema, Some(PathBuf::from("override.json")));
+        assert!(cli_override.schemas.is_empty());
+
+        // [[schemas]] entry without pattern/patterns fails cleanly.
+        let bad_cfg = dir.path().join("bad.toml");
+        fs::write(&bad_cfg, "[[schemas]]\nschema = \"default.json\"\n").unwrap();
+        assert!(resolve_configuration_from_dir(
+            dir.path(),
+            &CliOverrides {
+                config_path: Some(&bad_cfg),
+                ..CliOverrides::default()
+            }
+        )
+        .is_err());
     }
 }

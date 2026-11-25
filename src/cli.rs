@@ -89,6 +89,9 @@ pub enum Commands {
         /// Preview changes without writing files to disk
         #[arg(long)]
         dry_run: bool,
+        /// Show unified diff of frontmatter edits
+        #[arg(long)]
+        diff: bool,
     },
     /// Delete one or more keys from frontmatter
     Del {
@@ -98,6 +101,31 @@ pub enum Commands {
         /// Preview deletions without writing files to disk
         #[arg(long)]
         dry_run: bool,
+        /// Show unified diff of frontmatter deletions
+        #[arg(long)]
+        diff: bool,
+    },
+    /// Rename or merge a frontmatter key across files
+    #[command(visible_alias = "rename")]
+    Mv {
+        /// Source dot-separated frontmatter key path (e.g. tag, author.full_name)
+        old_key: String,
+        /// Destination dot-separated frontmatter key path (e.g. tags, author.name)
+        new_key: String,
+        /// Files or directories to process (defaults to current directory '.')
+        paths: Vec<PathBuf>,
+        /// Merge source into destination when destination already exists (deduplicates arrays, shallow-merges mappings)
+        #[arg(long, conflicts_with = "overwrite")]
+        merge: bool,
+        /// Overwrite destination key if it already exists
+        #[arg(long, conflicts_with = "merge")]
+        overwrite: bool,
+        /// Preview renames without writing files to disk
+        #[arg(long)]
+        dry_run: bool,
+        /// Show unified diff of frontmatter edits
+        #[arg(long)]
+        diff: bool,
     },
     /// Validate frontmatter against a JSON Schema
     Check {

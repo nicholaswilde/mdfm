@@ -6,7 +6,9 @@ pub mod frontmatter;
 use std::io::{self, Write};
 
 pub use cli::{Cli, CommandFactory, Commands, OutputFormat};
-pub use config::{CliOverrides, ConfigFile, ConfigFormat, ResolvedConfig};
+pub use config::{
+    CliOverrides, ConfigFile, ConfigFormat, ResolvedConfig, ResolvedSchemaRule, SchemaRuleConfig,
+};
 pub use frontmatter::{
     ClosingDelimiter, Format, FrontmatterBlock, FrontmatterData, FrontmatterError, LineEnding,
     SplitDocument,
@@ -76,12 +78,38 @@ pub fn run_app(cli: Cli, out: &mut dyn Write) -> anyhow::Result<()> {
         Commands::Get { keys, args } => {
             commands::get::execute(keys, args, filter.as_ref(), &resolved, out)
         }
-        Commands::Set { args, dry_run } => {
-            commands::set::execute(args, *dry_run, filter.as_ref(), &resolved, out)
-        }
-        Commands::Del { args, dry_run } => {
-            commands::del::execute(args, *dry_run, filter.as_ref(), &resolved, out)
-        }
+        Commands::Set {
+            args,
+            dry_run,
+            diff,
+        } => commands::set::execute(args, *dry_run, *diff, filter.as_ref(), &resolved, out),
+        Commands::Del {
+            args,
+            dry_run,
+            diff,
+        } => commands::del::execute(args, *dry_run, *diff, filter.as_ref(), &resolved, out),
+        Commands::Mv {
+            old_key,
+            new_key,
+            paths,
+            merge,
+            overwrite,
+            dry_run,
+            diff,
+        } => commands::mv::execute(
+            old_key,
+            new_key,
+            paths,
+            commands::mv::MvOptions {
+                merge: *merge,
+                overwrite: *overwrite,
+                dry_run: *dry_run,
+                show_diff: *diff,
+            },
+            filter.as_ref(),
+            &resolved,
+            out,
+        ),
         Commands::Check { paths, .. } => {
             commands::check::execute(paths, filter.as_ref(), &resolved, out)
         }
@@ -139,24 +167,74 @@ mod tests {
 
     #[test]
     fn cli_parses_set_del_check() {
-        let set_cli =
-            Cli::try_parse_from(["mdfm", "set", "draft=false", "post.md", "--dry-run"]).unwrap();
+        let set_cli = Cli::try_parse_from([
+            "mdfm",
+            "set",
+            "draft=false",
+            "post.md",
+            "--dry-run",
+            "--diff",
+        ])
+        .unwrap();
         match set_cli.command {
-            Commands::Set { args, dry_run } => {
+            Commands::Set {
+                args,
+                dry_run,
+                diff,
+            } => {
                 assert_eq!(args, vec!["draft=false", "post.md"]);
                 assert!(dry_run);
+                assert!(diff);
             }
             _ => panic!("expected set subcommand"),
         }
 
         let del_cli =
-            Cli::try_parse_from(["mdfm", "del", "--dry-run", "draft", "post.md"]).unwrap();
+            Cli::try_parse_from(["mdfm", "del", "--dry-run", "--diff", "draft", "post.md"])
+                .unwrap();
         match del_cli.command {
-            Commands::Del { args, dry_run } => {
+            Commands::Del {
+                args,
+                dry_run,
+                diff,
+            } => {
                 assert_eq!(args, vec!["draft", "post.md"]);
                 assert!(dry_run);
+                assert!(diff);
             }
             _ => panic!("expected del subcommand"),
+        }
+
+        let mv_cli = Cli::try_parse_from([
+            "mdfm",
+            "rename",
+            "--merge",
+            "--dry-run",
+            "--diff",
+            "tag",
+            "tags",
+            "docs/",
+        ])
+        .unwrap();
+        match mv_cli.command {
+            Commands::Mv {
+                old_key,
+                new_key,
+                paths,
+                merge,
+                overwrite,
+                dry_run,
+                diff,
+            } => {
+                assert_eq!(old_key, "tag");
+                assert_eq!(new_key, "tags");
+                assert_eq!(paths, vec![PathBuf::from("docs/")]);
+                assert!(merge);
+                assert!(!overwrite);
+                assert!(dry_run);
+                assert!(diff);
+            }
+            _ => panic!("expected mv subcommand"),
         }
 
         let check_cli = Cli::try_parse_from([

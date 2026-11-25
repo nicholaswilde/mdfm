@@ -1,10 +1,12 @@
 use anyhow::{Context, Result};
+use globset::{Glob, GlobMatcher};
 use owo_colors::{OwoColorize, Stream};
 use serde::Serialize;
 use serde_json::{json, Value as JsonValue};
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::cli::OutputFormat;
 use crate::commands::{build_table, collect_markdown_files};
@@ -19,29 +21,104 @@ struct CheckEntry {
     errors: Vec<String>,
 }
 
-pub fn execute(
-    paths: &[PathBuf],
-    filter: Option<&FilterExpr>,
-    config: &ResolvedConfig,
-    out: &mut dyn Write,
-) -> Result<()> {
-    let schema_path = config.schema.as_deref().ok_or_else(|| {
-        anyhow::anyhow!(
-            "No JSON Schema specified. Pass --schema <PATH>, set MDFM_SCHEMA, or configure 'schema' in .mdfm.toml"
-        )
-    })?;
+struct CompiledSchemaRule {
+    matchers: Vec<GlobMatcher>,
+    schema_path: PathBuf,
+    base_dir: Option<PathBuf>,
+}
 
+fn compile_validator(
+    schema_path: &Path,
+    cache: &mut HashMap<PathBuf, jsonschema::Validator>,
+) -> Result<()> {
+    if cache.contains_key(schema_path) {
+        return Ok(());
+    }
     let schema_raw = fs::read_to_string(schema_path)
         .with_context(|| format!("Failed to read schema file '{}'", schema_path.display()))?;
     let schema_json: JsonValue = serde_json::from_str(&schema_raw)
         .with_context(|| format!("Failed to parse JSON Schema '{}'", schema_path.display()))?;
     let validator = jsonschema::validator_for(&schema_json)
         .map_err(|e| anyhow::anyhow!("Invalid JSON Schema '{}': {e}", schema_path.display()))?;
+    cache.insert(schema_path.to_path_buf(), validator);
+    Ok(())
+}
+
+fn normalize_for_glob(path: &Path) -> String {
+    let raw = path.to_string_lossy().replace('\\', "/");
+    raw.trim_start_matches("./").to_string()
+}
+
+fn rule_matches_path(rule: &CompiledSchemaRule, file_path: &Path) -> bool {
+    let candidate = if let Some(ref base) = rule.base_dir {
+        if let Ok(rel) = file_path.strip_prefix(base) {
+            normalize_for_glob(rel)
+        } else if let (Ok(canon_file), Ok(canon_base)) =
+            (fs::canonicalize(file_path), fs::canonicalize(base))
+        {
+            if let Ok(rel) = canon_file.strip_prefix(&canon_base) {
+                normalize_for_glob(rel)
+            } else {
+                normalize_for_glob(file_path)
+            }
+        } else {
+            normalize_for_glob(file_path)
+        }
+    } else {
+        normalize_for_glob(file_path)
+    };
+
+    rule.matchers.iter().any(|m| m.is_match(&candidate))
+}
+
+pub fn execute(
+    paths: &[PathBuf],
+    filter: Option<&FilterExpr>,
+    config: &ResolvedConfig,
+    out: &mut dyn Write,
+) -> Result<()> {
+    if config.schema.is_none() && config.schemas.is_empty() {
+        anyhow::bail!(
+            "No JSON Schema specified. Pass --schema <PATH>, set MDFM_SCHEMA, or configure 'schema' / '[[schemas]]' in .mdfm.toml"
+        );
+    }
+
+    let mut validators: HashMap<PathBuf, jsonschema::Validator> = HashMap::new();
+    if let Some(ref default_schema) = config.schema {
+        compile_validator(default_schema, &mut validators)?;
+    }
+
+    let mut compiled_rules = Vec::with_capacity(config.schemas.len());
+    for rule in &config.schemas {
+        let mut matchers = Vec::with_capacity(rule.patterns.len());
+        for pat in &rule.patterns {
+            let glob = Glob::new(pat)
+                .with_context(|| format!("Invalid [[schemas]] glob pattern '{pat}'"))?;
+            matchers.push(glob.compile_matcher());
+        }
+        compile_validator(&rule.schema, &mut validators)?;
+        compiled_rules.push(CompiledSchemaRule {
+            matchers,
+            schema_path: rule.schema.clone(),
+            base_dir: rule.base_dir.clone(),
+        });
+    }
 
     let files = collect_markdown_files(paths, &config.ignore, &config.extensions)?;
     let mut results = Vec::new();
 
     for path in files {
+        let selected_schema = compiled_rules
+            .iter()
+            .find(|rule| rule_matches_path(rule, &path))
+            .map(|rule| rule.schema_path.as_path())
+            .or(config.schema.as_deref());
+
+        let Some(schema_path) = selected_schema else {
+            continue;
+        };
+        let validator = &validators[schema_path];
+
         let content = fs::read_to_string(&path)
             .with_context(|| format!("Failed to read '{}'", path.display()))?;
         let doc = frontmatter::split(&content);
@@ -365,5 +442,61 @@ mod tests {
         let mut out = Vec::new();
         execute(&[empty_dir.path().to_path_buf()], None, &cfg, &mut out).unwrap();
         assert_eq!(String::from_utf8(out).unwrap().trim(), "0 ok, 0 failed");
+    }
+
+    #[test]
+    fn check_per_glob_schemas_precedence_fallback_and_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("ref");
+        fs::create_dir_all(&sub).unwrap();
+
+        let ref_file = sub.join("chart.md");
+        let root_file = dir.path().join("root.md");
+        fs::write(&ref_file, "---\ncategory: temp\n---\nBody\n").unwrap();
+        fs::write(&root_file, "---\ntitle: Root\n---\nBody\n").unwrap();
+
+        let ref_schema = dir.path().join("ref.json");
+        let default_schema = dir.path().join("default.json");
+        fs::write(&ref_schema, r#"{"type":"object","required":["category"]}"#).unwrap();
+        fs::write(&default_schema, r#"{"type":"object","required":["title"]}"#).unwrap();
+
+        // First matching rule wins; unmatched file skips when no fallback schema is configured.
+        let rules_only_cfg = ResolvedConfig {
+            output: OutputFormat::Json,
+            schema: None,
+            schemas: vec![crate::config::ResolvedSchemaRule {
+                patterns: vec!["ref/**".to_string()],
+                schema: ref_schema.clone(),
+                base_dir: Some(dir.path().to_path_buf()),
+            }],
+            ..ResolvedConfig::default()
+        };
+        let mut out = Vec::new();
+        execute(&[dir.path().to_path_buf()], None, &rules_only_cfg, &mut out).unwrap();
+        let parsed: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert!(parsed[0]["file"].as_str().unwrap().contains("chart.md"));
+
+        // With fallback schema configured, both files validate against their respective schemas.
+        let with_fallback = ResolvedConfig {
+            schema: Some(default_schema),
+            ..rules_only_cfg
+        };
+        let mut out = Vec::new();
+        execute(&[dir.path().to_path_buf()], None, &with_fallback, &mut out).unwrap();
+        let parsed: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+        assert_eq!(parsed.len(), 2);
+
+        // Invalid glob in [[schemas]] returns a clear error.
+        let bad_glob_cfg = ResolvedConfig {
+            schemas: vec![crate::config::ResolvedSchemaRule {
+                patterns: vec!["[unclosed".to_string()],
+                schema: ref_schema,
+                base_dir: Some(dir.path().to_path_buf()),
+            }],
+            ..ResolvedConfig::default()
+        };
+        let mut out = Vec::new();
+        assert!(execute(&[dir.path().to_path_buf()], None, &bad_glob_cfg, &mut out).is_err());
     }
 }

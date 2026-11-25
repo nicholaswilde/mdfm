@@ -29,9 +29,10 @@
 - [src/frontmatter/filter.rs](src/frontmatter/filter.rs): `--where` expression parser and evaluator.
 - [src/commands/mod.rs](src/commands/mod.rs): `.gitignore`-aware file walker and table/JSON/plain formatters.
 - [src/commands/get.rs](src/commands/get.rs): `get` subcommand handler.
-- [src/commands/set.rs](src/commands/set.rs): `set` subcommand handler (`--dry-run`, typed value parsing).
-- [src/commands/del.rs](src/commands/del.rs): `del` subcommand handler (`--dry-run`).
-- [src/commands/check.rs](src/commands/check.rs): `check` JSON Schema validation subcommand handler.
+- [src/commands/set.rs](src/commands/set.rs): `set` subcommand handler (`--dry-run`, `--diff`, typed value parsing).
+- [src/commands/del.rs](src/commands/del.rs): `del` subcommand handler (`--dry-run`, `--diff`).
+- [src/commands/mv.rs](src/commands/mv.rs): `mv` / `rename` subcommand handler (`--merge`, `--overwrite`, `--dry-run`, `--diff`).
+- [src/commands/check.rs](src/commands/check.rs): `check` JSON Schema validation subcommand handler (`--errors-only`, `[[schemas]]`).
 - [src/commands/update.rs](src/commands/update.rs): `update` GitHub release self-updater (`--check`, `-y`/`--yes`, `--version`).
 
 ## Build & Automation

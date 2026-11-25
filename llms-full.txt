@@ -162,11 +162,12 @@ mdfm --output json get . posts/ | jq '.[].value'
 mdfm --where 'not has_frontmatter' -l get . docs/
 ```
 
-### `mdfm set [--dry-run] <KEY=VALUE [PATHS...]>...`
+### `mdfm set [--dry-run] [--diff] <KEY=VALUE [PATHS...]>...`
 
 Update or insert frontmatter keys across Markdown files. Creates frontmatter using `default_format` (`yaml` or `toml`) if a target file has none.
 
 - **`--dry-run`:** Preview changes (`would update (dry-run)`) without modifying files on disk.
+- **`--diff`:** Emit unified diffs of frontmatter changes (zero output for unchanged files in `table`/`plain`; adds `"diff"` field in `json`).
 - **Argument partitioning:** Arguments containing `=` (with non-empty key) are parsed as `KEY=VALUE` assignments; remaining arguments are target file/directory paths (defaults to `.`).
 - **Typed value parsing (`parse_cli_value`):**
   - Booleans: `true`, `false`
@@ -186,16 +187,29 @@ mdfm set draft=false author.name=Nicholas posts/
 mdfm --format toml set title=Created draft=false notes/plain.md
 ```
 
-### `mdfm del [--dry-run] <KEY [PATHS...]>...`
+### `mdfm del [--dry-run] [--diff] <KEY [PATHS...]>...`
 
 Delete one or more frontmatter keys (including nested dot paths).
 
 - **`--dry-run`:** Preview deletions without writing to disk.
+- **`--diff`:** Emit unified diffs of frontmatter deletions.
 - **Argument partitioning:** First positional argument is always a key; subsequent arguments are treated as keys until a path-like token (`.`, `..`, containing `/` or `\`, matching a configured extension such as `.md`/`.markdown`, or existing on disk) begins the target paths list (defaults to `.`).
 
 ```bash
-mdfm del draft author.bio posts/ --dry-run
+mdfm del draft author.bio posts/ --dry-run --diff
 mdfm del draft legacy_id posts/
+```
+
+### `mdfm mv <OLD_KEY> <NEW_KEY> [PATHS]...` (alias: `rename`)
+
+Atomically rename or merge a frontmatter key across YAML and TOML files (supports `--merge`, `--overwrite`, `--dry-run`, `--diff`, `--where`, `--output`).
+
+- Errors if `<NEW_KEY>` already exists unless `--merge` or `--overwrite` is passed.
+- `--merge` deduplicates arrays and shallow-merges mappings.
+
+```bash
+mdfm mv --merge tag tags docs/
+mdfm rename author.full_name author.name docs/ --dry-run --diff
 ```
 
 ### `mdfm check [--schema <SCHEMA>] [-q|--errors-only|--quiet] [PATHS]...`
@@ -290,6 +304,11 @@ extensions = ["md", "markdown"]
 
 # Only show validation failures and a compact summary line in `mdfm check`.
 errors_only = false
+
+# Per-glob JSON Schemas for `mdfm check` (ordered; falls back to top-level `schema`).
+[[schemas]]
+pattern = "docs/reference/**"
+schema = ".mdfm-reference-schema.json"
 ```
 
 ---

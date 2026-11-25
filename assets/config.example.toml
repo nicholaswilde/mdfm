@@ -33,3 +33,13 @@
 # Only show validation failures and a compact summary line in `mdfm check`.
 # CLI: --errors-only | -q | --quiet
 # errors_only = false
+
+# Per-glob JSON Schema mappings for `mdfm check` (evaluated in order; falls back to `schema`).
+# Explicit CLI `--schema` or `MDFM_SCHEMA` overrides all `[[schemas]]` entries.
+# [[schemas]]
+# pattern = "docs/reference/**"
+# schema = ".mdfm-reference-schema.json"
+#
+# [[schemas]]
+# patterns = ["cook/**/*.cook", "recipes/*.cook"]
+# schema = ".mdfm-cook-schema.json"

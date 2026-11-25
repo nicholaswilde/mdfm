@@ -1353,3 +1353,242 @@ fn cli_files_only_and_has_frontmatter_filter() {
     assert_eq!(lines.len(), 1);
     assert!(lines[0].ends_with("c_empty_fm.md"));
 }
+
+#[test]
+fn cli_diff_preview_on_set_del_and_mv() {
+    let tmp = tempfile::tempdir().unwrap();
+    let post = tmp.path().join("post.md");
+    let orig = "---\ntitle: Diff Test\ndraft: true\ntag:\n  - side\n---\nBody stays untouched.\n";
+    fs::write(&post, orig).unwrap();
+
+    // `set --dry-run --diff` emits unified diff and leaves file untouched.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["set", "draft=false", "--dry-run", "--diff"])
+        .arg(&post)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--- "))
+        .stdout(predicate::str::contains("+++ "))
+        .stdout(predicate::str::contains("-draft: true"))
+        .stdout(predicate::str::contains("+draft: false"));
+    assert_eq!(fs::read_to_string(&post).unwrap(), orig);
+
+    // Unchanged `set --dry-run --diff` produces zero output.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["set", "draft=true", "--dry-run", "--diff"])
+        .arg(&post)
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+
+    // `del --dry-run --diff` emits unified diff showing deleted line and leaves file untouched.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["del", "draft", "--dry-run", "--diff"])
+        .arg(&post)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("-draft: true"))
+        .stdout(predicate::str::contains("+draft").not());
+    assert_eq!(fs::read_to_string(&post).unwrap(), orig);
+
+    // `del --dry-run --diff` on absent key produces zero output.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["del", "nonexistent", "--dry-run", "--diff"])
+        .arg(&post)
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty());
+
+    // `set --output json --dry-run --diff` stays valid JSON and includes `diff` field.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args([
+            "--output",
+            "json",
+            "set",
+            "draft=false",
+            "--dry-run",
+            "--diff",
+        ])
+        .arg(&post)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let parsed: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+    assert!(parsed[0]["diff"]
+        .as_str()
+        .unwrap()
+        .contains("+draft: false"));
+}
+
+#[test]
+fn cli_mv_and_rename_with_merge_and_conflict() {
+    let tmp = tempfile::tempdir().unwrap();
+    let yaml_file = tmp.path().join("recipe.md");
+    let toml_file = tmp.path().join("post.md");
+
+    fs::write(
+        &yaml_file,
+        "---\ntitle: Puree\ntag:\n  - gordon-ramsay\n  - puree\n  - side\ntags:\n  - sides\n  - puree\n---\n# Puree\n",
+    )
+    .unwrap();
+    fs::write(
+        &toml_file,
+        "+++\ntitle = \"Guide\"\n\n[author]\nfull_name = \"Nick\"\n+++\n# Guide\n",
+    )
+    .unwrap();
+
+    // Moving onto an existing destination fails without --merge or --overwrite.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["mv", "tag", "tags"])
+        .arg(&yaml_file)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("already exists"));
+
+    // `mv --merge --dry-run --diff` previews merged tags without modifying disk.
+    let before = fs::read_to_string(&yaml_file).unwrap();
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["mv", "--merge", "--dry-run", "--diff", "tag", "tags"])
+        .arg(&yaml_file)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("-tag:"))
+        .stdout(predicate::str::contains("gordon-ramsay"));
+    assert_eq!(fs::read_to_string(&yaml_file).unwrap(), before);
+
+    // `mv --merge` atomically deduplicates into `tags` and removes `tag`.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["mv", "--merge", "tag", "tags"])
+        .arg(&yaml_file)
+        .assert()
+        .success();
+    let after = fs::read_to_string(&yaml_file).unwrap();
+    let doc = mdfm::frontmatter::split(&after);
+    let fm = doc.parse_frontmatter().unwrap().unwrap();
+    assert!(fm.get("tag").is_none());
+    assert_eq!(
+        fm.get("tags"),
+        Some(serde_json::json!([
+            "sides",
+            "puree",
+            "gordon-ramsay",
+            "side"
+        ]))
+    );
+    assert_eq!(doc.body, "# Puree\n");
+
+    // `rename` alias moves nested TOML key author.full_name -> author.name.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["rename", "author.full_name", "author.name"])
+        .arg(&toml_file)
+        .assert()
+        .success();
+    let after_toml = fs::read_to_string(&toml_file).unwrap();
+    let fm_toml = mdfm::frontmatter::split(&after_toml)
+        .parse_frontmatter()
+        .unwrap()
+        .unwrap();
+    assert!(fm_toml.get("author.full_name").is_none());
+    assert_eq!(fm_toml.get("author.name"), Some(serde_json::json!("Nick")));
+}
+
+#[test]
+fn cli_check_per_glob_schemas_and_override() {
+    let tmp = tempfile::tempdir().unwrap();
+    let docs_dir = tmp.path().join("docs");
+    let ref_dir = docs_dir.join("reference");
+    let cook_dir = tmp.path().join("cook").join("desserts");
+    fs::create_dir_all(&ref_dir).unwrap();
+    fs::create_dir_all(&cook_dir).unwrap();
+
+    // Default schema requires `title` + `draft`.
+    fs::write(
+        tmp.path().join(".mdfm-schema.json"),
+        r#"{"type":"object","required":["title","draft"],"properties":{"title":{"type":"string"},"draft":{"type":"boolean"}}}"#,
+    )
+    .unwrap();
+    // Reference schema requires `title` + `category`.
+    fs::write(
+        tmp.path().join(".mdfm-ref-schema.json"),
+        r#"{"type":"object","required":["title","category"],"properties":{"title":{"type":"string"},"category":{"type":"string"}}}"#,
+    )
+    .unwrap();
+    // Cook schema requires `title` + `servings`.
+    fs::write(
+        tmp.path().join(".mdfm-cook-schema.json"),
+        r#"{"type":"object","required":["title","servings"],"properties":{"title":{"type":"string"},"servings":{"type":"integer"}}}"#,
+    )
+    .unwrap();
+
+    fs::write(
+        tmp.path().join(".mdfm.toml"),
+        r#"
+extensions = ["md", "cook"]
+schema = ".mdfm-schema.json"
+
+[[schemas]]
+pattern = "docs/reference/**"
+schema = ".mdfm-ref-schema.json"
+
+[[schemas]]
+pattern = "cook/**/*.cook"
+schema = ".mdfm-cook-schema.json"
+"#,
+    )
+    .unwrap();
+
+    fs::write(
+        docs_dir.join("post.md"),
+        "---\ntitle: Post\ndraft: false\n---\nBody\n",
+    )
+    .unwrap();
+    fs::write(
+        ref_dir.join("temps.md"),
+        "---\ntitle: Temps\ncategory: chart\n---\nBody\n",
+    )
+    .unwrap();
+    fs::write(
+        cook_dir.join("cake.cook"),
+        "---\ntitle: Cake\nservings: 8\n---\nBake.\n",
+    )
+    .unwrap();
+
+    // All three files pass against their respective glob/default schemas.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args(["check", "-q", "."])
+        .assert()
+        .success()
+        .stdout(predicate::str::diff("3 ok, 0 failed\n"));
+
+    // Breaking a .cook file fails against `.mdfm-cook-schema.json`.
+    fs::write(
+        cook_dir.join("cake.cook"),
+        "---\ntitle: Cake\nservings: \"eight\"\n---\nBake.\n",
+    )
+    .unwrap();
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args(["check", "-q", "."])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("cake.cook"))
+        .stdout(predicate::str::contains("2 ok, 1 failed"));
+
+    // Explicit CLI `--schema` overrides all `[[schemas]]` rules.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args([
+            "check",
+            "-q",
+            "--schema",
+            ".mdfm-schema.json",
+            "docs/reference/temps.md",
+        ])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("temps.md"));
+}

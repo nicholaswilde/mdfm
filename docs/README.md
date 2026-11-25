@@ -48,9 +48,12 @@ mdfm --where 'not has_frontmatter' -l get . docs/
 # Filter files with --where and emit JSON
 mdfm --where 'draft == true' --output json get title posts/
 
-# Update or insert frontmatter keys (dry-run preview first)
-mdfm set draft=false 'tags=["rust","cli"]' posts/ --dry-run
+# Update or insert frontmatter keys (unified diff dry-run preview first)
+mdfm set draft=false 'tags=["rust","cli"]' posts/ --dry-run --diff
 mdfm set draft=false 'tags=["rust","cli"]' posts/
+
+# Rename or merge frontmatter keys atomically
+mdfm mv --merge tag tags docs/
 
 # Delete frontmatter keys
 mdfm del draft legacy_id posts/

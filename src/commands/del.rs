@@ -6,7 +6,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::cli::OutputFormat;
-use crate::commands::{build_table, collect_markdown_files, has_matching_extension};
+use crate::commands::{
+    build_table, collect_markdown_files, frontmatter_prefix, has_matching_extension,
+    render_unified_diff,
+};
 use crate::config::{default_extensions, ResolvedConfig};
 use crate::frontmatter;
 use crate::frontmatter::filter::{FilterContext, FilterExpr};
@@ -17,6 +20,8 @@ struct DelEntry {
     changed: bool,
     dry_run: bool,
     deleted: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    diff: Option<String>,
 }
 
 fn is_likely_path(arg: &str, extensions: &[String]) -> bool {
@@ -71,6 +76,7 @@ pub fn parse_del_args(args: &[String]) -> Result<(Vec<String>, Vec<PathBuf>)> {
 pub fn execute(
     args: &[String],
     dry_run: bool,
+    show_diff: bool,
     filter: Option<&FilterExpr>,
     config: &ResolvedConfig,
     out: &mut dyn Write,
@@ -113,17 +119,33 @@ pub fn execute(
         }
 
         let changed = !deleted.is_empty();
-        if changed && !dry_run {
+        let file_str = path.display().to_string();
+        let diff_text = if changed && (!dry_run || show_diff) {
             let rendered = doc.render(Some(&fm))?;
-            fs::write(&path, &rendered)
-                .with_context(|| format!("Failed to write '{}'", path.display()))?;
-        }
+            if !dry_run {
+                fs::write(&path, &rendered)
+                    .with_context(|| format!("Failed to write '{}'", path.display()))?;
+            }
+            if show_diff {
+                let before_fm = frontmatter_prefix(&original, doc.body.len());
+                let after_fm = frontmatter_prefix(&rendered, doc.body.len());
+                let use_color = !matches!(config.output, OutputFormat::Json);
+                Some(render_unified_diff(
+                    &file_str, before_fm, after_fm, use_color,
+                ))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         results.push(DelEntry {
-            file: path.display().to_string(),
+            file: file_str,
             changed,
             dry_run,
             deleted,
+            diff: diff_text,
         });
     }
 
@@ -135,6 +157,15 @@ pub fn execute(
         }
         OutputFormat::Json => {
             writeln!(out, "{}", serde_json::to_string_pretty(&results)?)?;
+        }
+        OutputFormat::Plain | OutputFormat::Table if show_diff => {
+            for r in &results {
+                if let Some(ref d) = r.diff {
+                    if !d.is_empty() {
+                        write!(out, "{d}")?;
+                    }
+                }
+            }
         }
         OutputFormat::Plain => {
             for r in &results {
@@ -224,6 +255,7 @@ mod tests {
         execute(
             &["draft".to_string(), plain.to_str().unwrap().to_string()],
             false,
+            false,
             None,
             &table_cfg,
             &mut out,
@@ -239,6 +271,7 @@ mod tests {
                 "draft".to_string(),
                 dir.path().to_str().unwrap().to_string(),
             ],
+            false,
             false,
             Some(&no_match),
             &table_cfg,
@@ -256,6 +289,7 @@ mod tests {
                 dir.path().to_str().unwrap().to_string(),
             ],
             false,
+            false,
             Some(&yes_match),
             &table_cfg,
             &mut out,
@@ -268,6 +302,7 @@ mod tests {
         execute(
             &["draft".to_string(), post.to_str().unwrap().to_string()],
             true,
+            false,
             None,
             &table_cfg,
             &mut out,
@@ -281,6 +316,7 @@ mod tests {
         let mut out = Vec::new();
         execute(
             &["draft".to_string(), post.to_str().unwrap().to_string()],
+            false,
             false,
             None,
             &table_cfg,
@@ -298,6 +334,7 @@ mod tests {
         execute(
             &["draft".to_string(), post.to_str().unwrap().to_string()],
             false,
+            false,
             None,
             &plain_cfg,
             &mut out,
@@ -310,6 +347,7 @@ mod tests {
         assert!(execute(
             &["a..b".to_string(), post.to_str().unwrap().to_string()],
             false,
+            false,
             None,
             &table_cfg,
             &mut err_out
@@ -320,6 +358,7 @@ mod tests {
         fs::write(&bad, "---\n[broken\n---\n").unwrap();
         assert!(execute(
             &["draft".to_string(), bad.to_str().unwrap().to_string()],
+            false,
             false,
             None,
             &table_cfg,
