@@ -38,6 +38,8 @@ complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "set" -d 'Update or insert
 complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "del" -d 'Delete one or more keys from frontmatter'
 complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "check" -d 'Validate frontmatter against a JSON Schema'
 complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "completions" -d 'Generate shell completion scripts (bash, zsh, fish, powershell, elvish)'
+complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "man" -d 'Generate UNIX roff man page'
+complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "update" -d 'Check for and install the latest mdfm release from GitHub'
 complete -c mdfm -n "__fish_mdfm_needs_command" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c mdfm -n "__fish_mdfm_using_subcommand get" -l format -d 'Frontmatter format used when creating new frontmatter (yaml or toml)' -r -f -a "yaml\t''
 toml\t''"
@@ -82,9 +84,30 @@ plain\t''"
 complete -c mdfm -n "__fish_mdfm_using_subcommand completions" -l where -d 'Optional filter expression (e.g. \'draft == true\', \'author.name == "Nick"\', \'tags contains "rust"\')' -r
 complete -c mdfm -n "__fish_mdfm_using_subcommand completions" -s C -l config -d 'Path to explicit configuration file override (TOML, YAML, or JSON)' -r -F
 complete -c mdfm -n "__fish_mdfm_using_subcommand completions" -s h -l help -d 'Print help'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del check completions help" -f -a "get" -d 'Query a frontmatter key (supports dot paths like author.name) across Markdown files'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del check completions help" -f -a "set" -d 'Update or insert frontmatter keys (creates frontmatter using default_format if absent)'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del check completions help" -f -a "del" -d 'Delete one or more keys from frontmatter'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del check completions help" -f -a "check" -d 'Validate frontmatter against a JSON Schema'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del check completions help" -f -a "completions" -d 'Generate shell completion scripts (bash, zsh, fish, powershell, elvish)'
-complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del check completions help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c mdfm -n "__fish_mdfm_using_subcommand man" -l format -d 'Frontmatter format used when creating new frontmatter (yaml or toml)' -r -f -a "yaml\t''
+toml\t''"
+complete -c mdfm -n "__fish_mdfm_using_subcommand man" -l output -d 'Output presentation format (table, json, or plain)' -r -f -a "table\t''
+json\t''
+plain\t''"
+complete -c mdfm -n "__fish_mdfm_using_subcommand man" -l where -d 'Optional filter expression (e.g. \'draft == true\', \'author.name == "Nick"\', \'tags contains "rust"\')' -r
+complete -c mdfm -n "__fish_mdfm_using_subcommand man" -s C -l config -d 'Path to explicit configuration file override (TOML, YAML, or JSON)' -r -F
+complete -c mdfm -n "__fish_mdfm_using_subcommand man" -s h -l help -d 'Print help'
+complete -c mdfm -n "__fish_mdfm_using_subcommand update" -l version -d 'Target a specific release version or tag (e.g. 0.1.0 or v0.1.0)' -r
+complete -c mdfm -n "__fish_mdfm_using_subcommand update" -l format -d 'Frontmatter format used when creating new frontmatter (yaml or toml)' -r -f -a "yaml\t''
+toml\t''"
+complete -c mdfm -n "__fish_mdfm_using_subcommand update" -l output -d 'Output presentation format (table, json, or plain)' -r -f -a "table\t''
+json\t''
+plain\t''"
+complete -c mdfm -n "__fish_mdfm_using_subcommand update" -l where -d 'Optional filter expression (e.g. \'draft == true\', \'author.name == "Nick"\', \'tags contains "rust"\')' -r
+complete -c mdfm -n "__fish_mdfm_using_subcommand update" -s C -l config -d 'Path to explicit configuration file override (TOML, YAML, or JSON)' -r -F
+complete -c mdfm -n "__fish_mdfm_using_subcommand update" -l check -d 'Check for available updates without installing'
+complete -c mdfm -n "__fish_mdfm_using_subcommand update" -s y -l yes -d 'Skip confirmation prompt before installing'
+complete -c mdfm -n "__fish_mdfm_using_subcommand update" -s h -l help -d 'Print help'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del check completions man update help" -f -a "get" -d 'Query a frontmatter key (supports dot paths like author.name) across Markdown files'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del check completions man update help" -f -a "set" -d 'Update or insert frontmatter keys (creates frontmatter using default_format if absent)'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del check completions man update help" -f -a "del" -d 'Delete one or more keys from frontmatter'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del check completions man update help" -f -a "check" -d 'Validate frontmatter against a JSON Schema'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del check completions man update help" -f -a "completions" -d 'Generate shell completion scripts (bash, zsh, fish, powershell, elvish)'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del check completions man update help" -f -a "man" -d 'Generate UNIX roff man page'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del check completions man update help" -f -a "update" -d 'Check for and install the latest mdfm release from GitHub'
+complete -c mdfm -n "__fish_mdfm_using_subcommand help; and not __fish_seen_subcommand_from get set del check completions man update help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'

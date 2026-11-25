@@ -13,6 +13,8 @@ mdfm [OPTIONS] <COMMAND>
 | `del` | Delete one or more keys from frontmatter | `mdfm del draft author.bio posts/` |
 | `check` | Validate frontmatter against a JSON Schema | `mdfm check --schema schema.json posts/` |
 | `completions` | Generate shell completion script (`bash`, `zsh`, `fish`, `powershell`, `elvish`) | `mdfm completions zsh` |
+| `man` | Output UNIX roff man page | `mdfm man > assets/mdfm.1` |
+| `update` | Check for and install the latest `mdfm` release from GitHub | `mdfm update [--check] [-y] [--version <ver>]` |
 
 ## :gear: Global Options
 

@@ -31,8 +31,14 @@ _mdfm() {
             mdfm,help)
                 cmd="mdfm__subcmd__help"
                 ;;
+            mdfm,man)
+                cmd="mdfm__subcmd__man"
+                ;;
             mdfm,set)
                 cmd="mdfm__subcmd__set"
+                ;;
+            mdfm,update)
+                cmd="mdfm__subcmd__update"
                 ;;
             mdfm__subcmd__help,check)
                 cmd="mdfm__subcmd__help__subcmd__check"
@@ -49,8 +55,14 @@ _mdfm() {
             mdfm__subcmd__help,help)
                 cmd="mdfm__subcmd__help__subcmd__help"
                 ;;
+            mdfm__subcmd__help,man)
+                cmd="mdfm__subcmd__help__subcmd__man"
+                ;;
             mdfm__subcmd__help,set)
                 cmd="mdfm__subcmd__help__subcmd__set"
+                ;;
+            mdfm__subcmd__help,update)
+                cmd="mdfm__subcmd__help__subcmd__update"
                 ;;
             *)
                 ;;
@@ -59,7 +71,7 @@ _mdfm() {
 
     case "${cmd}" in
         mdfm)
-            opts="-C -h -V --format --output --where --config --help --version get set del check completions help"
+            opts="-C -h -V --format --output --where --config --help --version get set del check completions man update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -233,7 +245,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__help)
-            opts="get set del check completions help"
+            opts="get set del check completions man update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -316,6 +328,20 @@ _mdfm() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        mdfm__subcmd__help__subcmd__man)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         mdfm__subcmd__help__subcmd__set)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
@@ -330,6 +356,54 @@ _mdfm() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        mdfm__subcmd__help__subcmd__update)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        mdfm__subcmd__man)
+            opts="-C -h --format --output --where --config --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --format)
+                    COMPREPLY=($(compgen -W "yaml toml" -- "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "table json plain" -- "${cur}"))
+                    return 0
+                    ;;
+                --where)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         mdfm__subcmd__set)
             opts="-C -h --dry-run --format --output --where --config --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
@@ -337,6 +411,44 @@ _mdfm() {
                 return 0
             fi
             case "${prev}" in
+                --format)
+                    COMPREPLY=($(compgen -W "yaml toml" -- "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -W "table json plain" -- "${cur}"))
+                    return 0
+                    ;;
+                --where)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --config)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        mdfm__subcmd__update)
+            opts="-y -C -h --check --yes --version --format --output --where --config --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --version)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --format)
                     COMPREPLY=($(compgen -W "yaml toml" -- "${cur}"))
                     return 0

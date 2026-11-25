@@ -84,6 +84,12 @@ tasks:
       - cargo run --quiet -- completions powershell > completions/_mdfm.ps1
       - cargo run --quiet -- completions elvish > completions/mdfm.elv
 
+  man:
+    desc: Generate UNIX roff man page (assets/mdfm.1)
+    cmds:
+      - mkdir -p assets
+      - cargo run --quiet -- man > assets/mdfm.1
+
   check:
     desc: Check code for errors without generating binary
     cmds:

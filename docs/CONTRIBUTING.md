@@ -18,6 +18,7 @@ task lint:toml    # Lint and check formatting of TOML files with taplo
 task fmt:toml     # Format TOML files with taplo
 task coverage     # Run tests and output coverage summary
 task completions  # Regenerate shell completions under completions/
+task man          # Regenerate UNIX man page (assets/mdfm.1)
 task build        # Build all multi-arch Linux targets via cross
 task serve        # Serve local Zensical documentation site
 task docs:build   # Build static Zensical documentation site

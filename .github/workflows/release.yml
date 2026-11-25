@@ -179,6 +179,12 @@ jobs:
           cp -r completions/ "$staging/"
         fi
 
+        # Copy man page
+        if [ -f "assets/mdfm.1" ]; then
+          mkdir -p "$staging/assets"
+          cp assets/mdfm.1 "$staging/assets/"
+        fi
+
         # Compress
         if [ "${{ matrix.os }}" = "windows-latest" ]; then
           7z a "$staging.zip" "$staging"

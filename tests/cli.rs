@@ -591,4 +591,30 @@ fn cli_env_vars_global_config_completions_and_table_outputs() {
         .arg(tmp.path().join("does-not-exist.md"))
         .assert()
         .failure();
+
+    // Update command: help & non-interactive confirmation guard (no network call).
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["update", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("--check"))
+        .stdout(predicate::str::contains("--yes"))
+        .stdout(predicate::str::contains("--version"));
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["update"])
+        .write_stdin("")
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains(
+            "Cannot confirm update in non-interactive mode",
+        ));
+
+    // Man page generation via binary.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["man"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(".TH mdfm"))
+        .stdout(predicate::str::contains(".SH SYNOPSIS"));
 }

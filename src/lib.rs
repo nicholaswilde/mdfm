@@ -20,10 +20,30 @@ pub fn run() -> anyhow::Result<()> {
 
 /// Dispatch a parsed `Cli` invocation writing formatted output to `out`.
 pub fn run_app(cli: Cli, out: &mut dyn Write) -> anyhow::Result<()> {
-    if let Commands::Completions { shell } = &cli.command {
-        let mut cmd = Cli::command();
-        clap_complete::generate(*shell, &mut cmd, "mdfm", out);
-        return Ok(());
+    match &cli.command {
+        Commands::Completions { shell } => {
+            let mut cmd = Cli::command();
+            clap_complete::generate(*shell, &mut cmd, "mdfm", out);
+            return Ok(());
+        }
+        Commands::Man => {
+            return cli::generate_manpage(out);
+        }
+        Commands::Update {
+            check,
+            yes,
+            version,
+        } => {
+            return commands::update::execute(
+                commands::update::UpdateOptions {
+                    check: *check,
+                    yes: *yes,
+                    version: version.clone(),
+                },
+                out,
+            );
+        }
+        _ => {}
     }
 
     let cli_schema = match &cli.command {
@@ -49,7 +69,9 @@ pub fn run_app(cli: Cli, out: &mut dyn Write) -> anyhow::Result<()> {
         Commands::Check { paths, .. } => {
             commands::check::execute(paths, filter.as_ref(), &resolved, out)
         }
-        Commands::Completions { .. } => unreachable!("handled before config resolution"),
+        Commands::Completions { .. } | Commands::Man | Commands::Update { .. } => {
+            unreachable!("handled before config resolution")
+        }
     }
 }
 
@@ -132,5 +154,17 @@ mod tests {
                 "completion script for {shell} should mention mdfm"
             );
         }
+    }
+
+    #[test]
+    fn cli_generates_manpage() {
+        let cli = Cli::try_parse_from(["mdfm", "man"]).unwrap();
+        assert!(matches!(cli.command, Commands::Man));
+        let mut buf = Vec::new();
+        run_app(cli, &mut buf).unwrap();
+        let roff = String::from_utf8(buf).unwrap();
+        assert!(roff.contains(".TH mdfm"));
+        assert!(roff.contains(".SH NAME"));
+        assert!(roff.contains(".SH SYNOPSIS"));
     }
 }

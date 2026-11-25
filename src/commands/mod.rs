@@ -2,6 +2,7 @@ pub mod check;
 pub mod del;
 pub mod get;
 pub mod set;
+pub mod update;
 
 use anyhow::{Context, Result};
 use comfy_table::{presets::UTF8_FULL, ContentArrangement, Table};

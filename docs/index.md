@@ -59,6 +59,9 @@ mdfm del draft legacy_id posts/
 
 # Validate frontmatter against a JSON Schema
 mdfm check --schema .mdfm-schema.json posts/
+
+# Check for or install the latest GitHub release
+mdfm update --check
 ```
 
 ## :star: Contributing

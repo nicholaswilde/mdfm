@@ -19,7 +19,7 @@ brew install mdfm
 
 ## :package: APT (Debian / Ubuntu)
 
-Install `.deb` packages (`amd64`, `arm64`, `armhf`, `armel`) from the [`nicholaswilde/apt`](https://github.com/nicholaswilde/apt) repository ([nicholaswilde.io/apt](https://nicholaswilde.io/apt)), which bundles the binary and Bash/Zsh/Fish shell completions:
+Install `.deb` packages (`amd64`, `arm64`, `armhf`, `armel`) from the [`nicholaswilde/apt`](https://github.com/nicholaswilde/apt) repository ([nicholaswilde.io/apt](https://nicholaswilde.io/apt)), which bundles the binary, man page, and Bash/Zsh/Fish shell completions:
 
 ### 1. Add Repository Signing Key
 
@@ -65,11 +65,27 @@ scoop bucket add nicholaswilde https://github.com/nicholaswilde/scoop-bucket
 scoop install nicholaswilde/mdfm
 ```
 
-## :inbox_tray: GitHub Releases
+## :inbox_tray: GitHub Releases & Update
 
 Download prebuilt archives (`.tar.gz`, `.zip`), SHA-256 checksum files (`.sha256`), and `.deb` packages for Linux, macOS, and Windows from the [GitHub Releases](https://github.com/nicholaswilde/mdfm/releases) page.
 
-Each release archive includes the `mdfm` binary, `README.md`, `LICENSE`, `config.example.toml`, and pre-generated shell completions under `completions/`.
+Each release archive includes the `mdfm` binary, `README.md`, `LICENSE`, `config.example.toml`, man page (`assets/mdfm.1`), and pre-generated shell completions under `completions/`.
+
+Update `mdfm` in-place directly from `nicholaswilde/mdfm` GitHub releases (useful when installed via GitHub release archives rather than a package manager):
+
+```bash
+# Check if a newer release is available without installing:
+mdfm update --check
+
+# Update interactively to the latest release:
+mdfm update
+
+# Update without confirmation prompt:
+mdfm update --yes
+
+# Install a specific release version or tag:
+mdfm update --version 0.1.0 --yes
+```
 
 ## :crab: Build or Install from Source
 
@@ -150,3 +166,17 @@ Generate shell completion scripts for Bash, Zsh, Fish, PowerShell, and Elvish us
     ```
 
 Pre-generated completion scripts are also checked into the [`completions/`](https://github.com/nicholaswilde/mdfm/tree/main/completions) folder.
+
+## :page_facing_up: Man Page
+
+Generate or view the UNIX man page:
+
+```bash
+# Generate man page
+task man
+# Or with binary
+mdfm man > assets/mdfm.1
+
+# Preview formatted man page
+man -l assets/mdfm.1
+```

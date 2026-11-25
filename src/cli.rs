@@ -101,4 +101,26 @@ pub enum Commands {
         /// Target shell
         shell: Shell,
     },
+    /// Generate UNIX roff man page
+    Man,
+    /// Check for and install the latest mdfm release from GitHub
+    Update {
+        /// Check for available updates without installing
+        #[arg(long)]
+        check: bool,
+        /// Skip confirmation prompt before installing
+        #[arg(short = 'y', long)]
+        yes: bool,
+        /// Target a specific release version or tag (e.g. 0.1.0 or v0.1.0)
+        #[arg(long, value_name = "VERSION")]
+        version: Option<String>,
+    },
+}
+
+/// Render the UNIX roff man page for `mdfm` into `writer`.
+pub fn generate_manpage(writer: &mut dyn std::io::Write) -> anyhow::Result<()> {
+    let cmd = Cli::command();
+    let man = clap_mangen::Man::new(cmd);
+    man.render(writer)
+        .map_err(|e| anyhow::anyhow!("Failed rendering man page: {e}"))
 }
