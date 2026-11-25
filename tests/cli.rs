@@ -974,3 +974,176 @@ fn cli_where_keys_with_spaces_and_brackets() {
         .failure()
         .stderr(predicate::str::contains("Invalid --where expression"));
 }
+
+#[test]
+fn cli_configurable_extensions_flag_and_config() {
+    let tmp = tempfile::tempdir().unwrap();
+    let md_file = tmp.path().join("post.md");
+    let cook_file = tmp.path().join("pumpkin_cake.cook");
+    let mdx_file = tmp.path().join("guide.MDX");
+    let txt_file = tmp.path().join("notes.txt");
+
+    fs::write(
+        &md_file,
+        "---\ntitle: Markdown Post\ndraft: true\n---\nBody\n",
+    )
+    .unwrap();
+    fs::write(
+        &cook_file,
+        "---\ntitle: Pumpkin Cake\ntags:\n  - dessert\n---\nMix @flour{2%cups}.\n",
+    )
+    .unwrap();
+    fs::write(&mdx_file, "---\ntitle: MDX Guide\n---\n<Alert />\n").unwrap();
+    fs::write(&txt_file, "---\ntitle: Ignored Txt\n---\nPlain\n").unwrap();
+
+    // Default walk discovers only .md / .markdown.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args(["--output", "json", "get", "title"])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let entries: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["value"], "Markdown Post");
+
+    // Repeatable --ext with leading dot and mixed case discovers .cook and .MDX.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args([
+            "--output", "json", "--ext", ".cook", "--ext", "mdx", "get", "title",
+        ])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let entries: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+    assert_eq!(entries.len(), 2);
+    let titles: Vec<&str> = entries
+        .iter()
+        .map(|e| e["value"].as_str().unwrap())
+        .collect();
+    assert!(titles.contains(&"Pumpkin Cake"));
+    assert!(titles.contains(&"MDX Guide"));
+
+    // `.mdfm.toml` extensions list applies to walks, and CLI `--ext` overrides it.
+    let cfg = tmp.path().join(".mdfm.toml");
+    fs::write(&cfg, "extensions = [\"cook\", \"md\"]\n").unwrap();
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .current_dir(tmp.path())
+        .args(["--output", "json", "get", "title", "."])
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let entries: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+    assert_eq!(entries.len(), 2);
+
+    // Mutate .cook file via directory walk using config extensions.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args(["--ext", "cook", "set", "tags+=autumn", "."])
+        .assert()
+        .success();
+    let updated_cook = fs::read_to_string(&cook_file).unwrap();
+    assert!(updated_cook.contains("autumn"));
+    assert!(updated_cook.ends_with("Mix @flour{2%cups}.\n"));
+
+    // Invalid empty --ext fails cleanly.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["--ext", ".", "get", "title"])
+        .arg(tmp.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Invalid empty file extension"));
+}
+
+#[test]
+fn cli_check_errors_only_quiet_and_config() {
+    let tmp = tempfile::tempdir().unwrap();
+    let valid_a = tmp.path().join("a_valid.md");
+    let valid_b = tmp.path().join("b_valid.md");
+    let invalid = tmp.path().join("c_invalid.md");
+    let schema = copy_fixture("schema.json", tmp.path());
+
+    fs::write(&valid_a, "---\ntitle: Alpha\ndraft: false\n---\nBody\n").unwrap();
+    fs::write(&valid_b, "---\ntitle: Beta\ndraft: true\n---\nBody\n").unwrap();
+    fs::write(&invalid, "---\ntitle: \"\"\ndraft: \"wrong\"\n---\nBody\n").unwrap();
+
+    // All-pass with --errors-only in table format prints only summary line.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["check", "--errors-only", "--schema"])
+        .arg(&schema)
+        .arg(&valid_a)
+        .arg(&valid_b)
+        .assert()
+        .success()
+        .stdout(predicate::str::diff("2 ok, 0 failed\n"));
+
+    // Partial-fail with -q in plain format prints only failing file errors + summary.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["--output", "plain", "check", "-q", "--schema"])
+        .arg(&schema)
+        .arg(&valid_a)
+        .arg(&invalid)
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("a_valid.md").not())
+        .stdout(predicate::str::contains("c_invalid.md\terror:"))
+        .stdout(predicate::str::contains("1 ok, 1 failed"));
+
+    // All-pass with --quiet in JSON format emits empty JSON array [].
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args(["--output", "json", "check", "--quiet", "--schema"])
+        .arg(&schema)
+        .arg(&valid_a)
+        .arg(&valid_b)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let parsed: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+    assert!(parsed.is_empty());
+
+    // Partial-fail with --errors-only in JSON format emits only failing entries.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args(["--output", "json", "check", "--errors-only", "--schema"])
+        .arg(&schema)
+        .arg(&valid_a)
+        .arg(&invalid)
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let parsed: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0]["valid"], false);
+
+    // Config toggle `errors_only = true` in .mdfm.toml works without CLI flag.
+    fs::write(
+        tmp.path().join(".mdfm.toml"),
+        format!(
+            "schema = \"{}\"\nerrors_only = true\n",
+            schema.file_name().unwrap().to_str().unwrap()
+        ),
+    )
+    .unwrap();
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.current_dir(tmp.path())
+        .args(["check", "a_valid.md", "b_valid.md"])
+        .assert()
+        .success()
+        .stdout(predicate::str::diff("2 ok, 0 failed\n"));
+}

@@ -38,7 +38,7 @@ pub fn execute(
     let validator = jsonschema::validator_for(&schema_json)
         .map_err(|e| anyhow::anyhow!("Invalid JSON Schema '{}': {e}", schema_path.display()))?;
 
-    let files = collect_markdown_files(paths, &config.ignore)?;
+    let files = collect_markdown_files(paths, &config.ignore, &config.extensions)?;
     let mut results = Vec::new();
 
     for path in files {
@@ -104,13 +104,19 @@ pub fn execute(
     }
 
     let failed_count = results.iter().filter(|r| !r.valid).count();
+    let ok_count = results.len() - failed_count;
+    let displayed: Vec<&CheckEntry> = if config.errors_only {
+        results.iter().filter(|r| !r.valid).collect()
+    } else {
+        results.iter().collect()
+    };
 
     match config.output {
         OutputFormat::Json => {
-            writeln!(out, "{}", serde_json::to_string_pretty(&results)?)?;
+            writeln!(out, "{}", serde_json::to_string_pretty(&displayed)?)?;
         }
         OutputFormat::Plain => {
-            for r in &results {
+            for r in &displayed {
                 if r.valid {
                     writeln!(out, "{}\tok", r.file)?;
                 } else {
@@ -119,11 +125,14 @@ pub fn execute(
                     }
                 }
             }
+            if config.errors_only {
+                writeln!(out, "{ok_count} ok, {failed_count} failed")?;
+            }
         }
         OutputFormat::Table => {
-            if !results.is_empty() {
+            if !displayed.is_empty() {
                 let mut table = build_table(&["File", "Status", "Errors"]);
-                for r in &results {
+                for r in &displayed {
                     let status = if r.valid {
                         format!("{}", "ok".if_supports_color(Stream::Stdout, |t| t.green()))
                     } else {
@@ -132,6 +141,9 @@ pub fn execute(
                     table.add_row(vec![r.file.clone(), status, r.errors.join("; ")]);
                 }
                 writeln!(out, "{table}")?;
+            }
+            if config.errors_only {
+                writeln!(out, "{ok_count} ok, {failed_count} failed")?;
             }
         }
     }
@@ -245,5 +257,107 @@ mod tests {
         let parsed: Vec<JsonValue> = serde_json::from_slice(&json_out).unwrap();
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0]["valid"], json!(true));
+    }
+
+    #[test]
+    fn check_errors_only_table_plain_and_json() {
+        let dir = tempfile::tempdir().unwrap();
+        let valid1 = dir.path().join("a_valid.md");
+        let valid2 = dir.path().join("b_valid.md");
+        let invalid = dir.path().join("c_invalid.md");
+        fs::write(&valid1, "---\ntitle: One\ndraft: false\n---\nBody\n").unwrap();
+        fs::write(&valid2, "---\ntitle: Two\ndraft: true\n---\nBody\n").unwrap();
+        fs::write(&invalid, "---\ntitle: \"\"\ndraft: \"nope\"\n---\nBody\n").unwrap();
+
+        let schema = dir.path().join("schema.json");
+        fs::write(
+            &schema,
+            r#"{"type":"object","required":["title","draft"],"properties":{"title":{"type":"string","minLength":1},"draft":{"type":"boolean"}}}"#,
+        )
+        .unwrap();
+
+        // Table all-pass: no table rows, only compact summary.
+        let cfg = ResolvedConfig {
+            output: OutputFormat::Table,
+            schema: Some(schema.clone()),
+            errors_only: true,
+            ..ResolvedConfig::default()
+        };
+        let mut out = Vec::new();
+        execute(&[valid1.clone(), valid2.clone()], None, &cfg, &mut out).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap().trim(), "2 ok, 0 failed");
+
+        // Table partial-fail: only failing row in table + summary line + Err.
+        let mut out = Vec::new();
+        assert!(execute(
+            &[valid1.clone(), valid2.clone(), invalid.clone()],
+            None,
+            &cfg,
+            &mut out
+        )
+        .is_err());
+        let table_str = String::from_utf8(out).unwrap();
+        assert!(!table_str.contains("a_valid.md"));
+        assert!(!table_str.contains("b_valid.md"));
+        assert!(table_str.contains("c_invalid.md"));
+        assert!(table_str.trim_end().ends_with("2 ok, 1 failed"));
+
+        // Plain all-pass: only summary line.
+        let plain_cfg = ResolvedConfig {
+            output: OutputFormat::Plain,
+            schema: Some(schema.clone()),
+            errors_only: true,
+            ..ResolvedConfig::default()
+        };
+        let mut out = Vec::new();
+        execute(
+            &[valid1.clone(), valid2.clone()],
+            None,
+            &plain_cfg,
+            &mut out,
+        )
+        .unwrap();
+        assert_eq!(String::from_utf8(out).unwrap().trim(), "2 ok, 0 failed");
+
+        // Plain partial-fail: only failing errors + summary line.
+        let mut out = Vec::new();
+        assert!(execute(
+            &[valid1.clone(), invalid.clone()],
+            None,
+            &plain_cfg,
+            &mut out
+        )
+        .is_err());
+        let plain_str = String::from_utf8(out).unwrap();
+        assert!(!plain_str.contains("a_valid.md"));
+        assert!(!plain_str.contains("\tok"));
+        assert!(plain_str.contains("c_invalid.md\terror:"));
+        assert!(plain_str.trim_end().ends_with("1 ok, 1 failed"));
+
+        // JSON all-pass: empty JSON array [].
+        let json_cfg = ResolvedConfig {
+            output: OutputFormat::Json,
+            schema: Some(schema),
+            errors_only: true,
+            ..ResolvedConfig::default()
+        };
+        let mut out = Vec::new();
+        execute(&[valid1.clone(), valid2.clone()], None, &json_cfg, &mut out).unwrap();
+        let parsed: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+        assert!(parsed.is_empty());
+
+        // JSON partial-fail: array containing only failing entries.
+        let mut out = Vec::new();
+        assert!(execute(&[valid1, invalid], None, &json_cfg, &mut out).is_err());
+        let parsed: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0]["valid"], json!(false));
+        assert!(parsed[0]["file"].as_str().unwrap().contains("c_invalid.md"));
+
+        // Empty directory with errors_only: 0 ok, 0 failed / [].
+        let empty_dir = tempfile::tempdir().unwrap();
+        let mut out = Vec::new();
+        execute(&[empty_dir.path().to_path_buf()], None, &cfg, &mut out).unwrap();
+        assert_eq!(String::from_utf8(out).unwrap().trim(), "0 ok, 0 failed");
     }
 }

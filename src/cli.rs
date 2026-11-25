@@ -40,6 +40,10 @@ pub struct Cli {
     #[arg(short = 'C', long, env = "MDFM_CONFIG", global = true)]
     pub config: Option<PathBuf>,
 
+    /// File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)
+    #[arg(long = "ext", value_name = "EXT", value_delimiter = ',', global = true)]
+    pub ext: Vec<String>,
+
     #[command(subcommand)]
     pub command: Commands,
 }
@@ -95,6 +99,9 @@ pub enum Commands {
         /// Path to JSON Schema file
         #[arg(long, env = "MDFM_SCHEMA")]
         schema: Option<PathBuf>,
+        /// Show only validation failures and a compact summary line
+        #[arg(short = 'q', long = "errors-only", visible_alias = "quiet")]
+        errors_only: bool,
     },
     /// Generate shell completion scripts (bash, zsh, fish, powershell, elvish)
     Completions {

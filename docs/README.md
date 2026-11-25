@@ -51,8 +51,11 @@ mdfm set draft=false 'tags=["rust","cli"]' posts/
 # Delete frontmatter keys
 mdfm del draft legacy_id posts/
 
-# Validate frontmatter against a JSON Schema
-mdfm check --schema .mdfm-schema.json posts/
+# Validate frontmatter against a JSON Schema (quiet CI mode)
+mdfm check --errors-only --schema .mdfm-schema.json posts/
+
+# Walk custom file extensions (e.g. CookLang or MDX)
+mdfm --ext cook get title recipes/
 ```
 
 ---
@@ -61,7 +64,7 @@ mdfm check --schema .mdfm-schema.json posts/
 
 `mdfm` resolves configuration in strict precedence order:
 
-1. CLI flags (`--format`, `--output`, `--schema`, `--config`)
+1. CLI flags (`--format`, `--output`, `--schema`, `--ext`, `--errors-only` / `-q`, `--config`)
 2. Environment variables (`MDFM_FORMAT`, `MDFM_OUTPUT`, `MDFM_SCHEMA`, `MDFM_CONFIG`)
 3. Project-local `.mdfm.toml`
 4. User global config (`~/.config/mdfm/config.toml`)

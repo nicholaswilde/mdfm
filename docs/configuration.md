@@ -17,11 +17,11 @@ cp assets/config.example.toml ~/.config/mdfm/config.toml
 
 Settings resolve in strict hierarchical precedence order (highest to lowest):
 
-1. **Command Line Flags** (`--format`, `--output`, `--schema`, `-C` / `--config`)
+1. **Command Line Flags** (`--format`, `--output`, `--schema`, `--ext`, `--errors-only` / `-q` / `--quiet`, `-C` / `--config`)
 2. **Environment Variables** (`MDFM_FORMAT`, `MDFM_OUTPUT`, `MDFM_SCHEMA`, `MDFM_CONFIG`)
 3. **Project-Local Configuration** (`.mdfm.toml`, discovered by walking upward from the current working directory — or explicit `-C` / `--config` / `MDFM_CONFIG`)
 4. **User Global Configuration** (`$XDG_CONFIG_HOME/mdfm/config.{toml,yaml,yml,json}`, `~/.config/mdfm/config.{toml,yaml,yml,json}`, or `%APPDATA%\mdfm\config.*` / `%USERPROFILE%\.config\mdfm\config.*` on Windows)
-5. **Built-In Defaults** (`default_format = "yaml"`, `output = "table"`, `schema = None`, `ignore = []`)
+5. **Built-In Defaults** (`default_format = "yaml"`, `output = "table"`, `schema = None`, `ignore = []`, `extensions = ["md", "markdown"]`, `errors_only = false`)
 
 !!! note
     Passing `-C` / `--config <path>` or setting `MDFM_CONFIG` loads only that explicit file (failing immediately if the path does not exist or is not a regular file) and skips automatic local/global discovery.
@@ -50,6 +50,12 @@ A ready-to-use template is available at [`assets/config.example.toml`](https://g
 
     # Extra glob patterns excluded during directory walking (in addition to .gitignore)
     ignore = ["drafts/**", "CHANGELOG.md"]
+
+    # File extensions discovered during directory walking (default: ["md", "markdown"])
+    extensions = ["md", "markdown"]
+
+    # Suppress passing rows in `mdfm check` and print a compact summary line
+    errors_only = false
     ```
 
 === "YAML (`config.yaml`)"
@@ -61,6 +67,10 @@ A ready-to-use template is available at [`assets/config.example.toml`](https://g
     ignore:
       - drafts/**
       - CHANGELOG.md
+    extensions:
+      - md
+      - markdown
+    errors_only: false
     ```
 
 === "JSON (`config.json`)"
@@ -73,7 +83,12 @@ A ready-to-use template is available at [`assets/config.example.toml`](https://g
       "ignore": [
         "drafts/**",
         "CHANGELOG.md"
-      ]
+      ],
+      "extensions": [
+        "md",
+        "markdown"
+      ],
+      "errors_only": false
     }
     ```
 
@@ -85,6 +100,8 @@ A ready-to-use template is available at [`assets/config.example.toml`](https://g
 | `output` | String | `"table"` | `"table"`, `"json"`, `"plain"` | Output presentation format for `get`, `set`, `del`, and `check` |
 | `schema` | String (Path) | None | File path | Default JSON Schema file used by `mdfm check` |
 | `ignore` | Array of Strings | `[]` | Glob patterns | Additional file/directory globs excluded during directory traversal |
+| `extensions` | Array of Strings | `["md", "markdown"]` | File extensions | File extensions matched during directory walks (case-insensitive, leading `.` optional) |
+| `errors_only` | Boolean | `false` | `true`, `false` | Hide passing files in `mdfm check` and print a compact summary (`<ok> ok, <failed> failed`) |
 
 ## :earth_americas: Environment Variables Reference
 

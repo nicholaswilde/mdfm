@@ -20,6 +20,7 @@ _mdfm() {
 '--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
 '-h[Print help]' \
 '--help[Print help]' \
 '-V[Print version]' \
@@ -40,6 +41,7 @@ _arguments "${_arguments_options[@]}" : \
 '--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':key -- Dot-separated frontmatter key path (e.g. title, author.name):_default' \
@@ -53,6 +55,7 @@ _arguments "${_arguments_options[@]}" : \
 '--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
 '--dry-run[Preview changes without writing files to disk]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -66,6 +69,7 @@ _arguments "${_arguments_options[@]}" : \
 '--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
 '--dry-run[Preview deletions without writing files to disk]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -80,6 +84,10 @@ _arguments "${_arguments_options[@]}" : \
 '--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
+'-q[Show only validation failures and a compact summary line]' \
+'--errors-only[Show only validation failures and a compact summary line]' \
+'--quiet[Show only validation failures and a compact summary line]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '*::paths -- Files or directories to validate (defaults to current directory '\''.'\''):_files' \
@@ -92,6 +100,7 @@ _arguments "${_arguments_options[@]}" : \
 '--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':shell -- Target shell:(bash elvish fish powershell zsh)' \
@@ -104,6 +113,7 @@ _arguments "${_arguments_options[@]}" : \
 '--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -116,6 +126,7 @@ _arguments "${_arguments_options[@]}" : \
 '--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
+'*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
 '--check[Check for available updates without installing]' \
 '-y[Skip confirmation prompt before installing]' \
 '--yes[Skip confirmation prompt before installing]' \

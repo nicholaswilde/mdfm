@@ -23,11 +23,13 @@ pub fn compile_filter(expr: Option<&str>) -> Result<Option<FilterExpr>> {
     }
 }
 
-/// Collect Markdown files (`.md`, `.markdown`) from the given paths, respecting `.gitignore`
-/// and any configured `ignore` glob patterns. Defaults to `.` when `paths` is empty.
+/// Collect files matching `extensions` (default: `.md`, `.markdown`) from the given paths,
+/// respecting `.gitignore` and any configured `ignore` glob patterns. Defaults to `.` when
+/// `paths` is empty.
 pub fn collect_markdown_files(
     paths: &[PathBuf],
     ignore_patterns: &[String],
+    extensions: &[String],
 ) -> Result<Vec<PathBuf>> {
     let targets: Vec<PathBuf> = if paths.is_empty() {
         vec![PathBuf::from(".")]
@@ -72,7 +74,9 @@ pub fn collect_markdown_files(
             let entry = entry.with_context(|| {
                 format!("Failed while traversing directory '{}'", target.display())
             })?;
-            if entry.file_type().is_some_and(|ft| ft.is_file()) && is_markdown_path(entry.path()) {
+            if entry.file_type().is_some_and(|ft| ft.is_file())
+                && has_matching_extension(entry.path(), extensions)
+            {
                 files.push(entry.into_path());
             }
         }
@@ -83,10 +87,14 @@ pub fn collect_markdown_files(
     Ok(files)
 }
 
-pub(crate) fn is_markdown_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("md") || ext.eq_ignore_ascii_case("markdown"))
+pub(crate) fn has_matching_extension(path: &Path, extensions: &[String]) -> bool {
+    let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
+        return false;
+    };
+    extensions.iter().any(|allowed| {
+        let normalized = allowed.trim().trim_start_matches('.');
+        !normalized.is_empty() && ext.eq_ignore_ascii_case(normalized)
+    })
 }
 
 /// Render a JSON value for human-friendly table or plain output.
@@ -136,19 +144,45 @@ mod tests {
         fs::write(dir.path().join("b.markdown"), "# b\n").unwrap();
         fs::write(dir.path().join("skip.md"), "# skip\n").unwrap();
         fs::write(dir.path().join("note.txt"), "text\n").unwrap();
+        fs::write(dir.path().join("cake.cook"), "---\ntitle: Cake\n---\n").unwrap();
+        fs::write(dir.path().join("page.MDX"), "---\ntitle: MDX\n---\n").unwrap();
 
-        // `!`-prefixed ignore pattern works alongside plain patterns.
-        let files =
-            collect_markdown_files(&[dir.path().to_path_buf()], &["!skip.md".to_string()]).unwrap();
+        let default_exts = crate::config::default_extensions();
+
+        // `!`-prefixed ignore pattern works alongside plain patterns with default extensions.
+        let files = collect_markdown_files(
+            &[dir.path().to_path_buf()],
+            &["!skip.md".to_string()],
+            &default_exts,
+        )
+        .unwrap();
         assert_eq!(files.len(), 2);
 
+        // Custom extensions match case-insensitively and strip optional leading dots.
+        let custom_files = collect_markdown_files(
+            &[dir.path().to_path_buf()],
+            &[],
+            &[".cook".to_string(), "mdx".to_string()],
+        )
+        .unwrap();
+        assert_eq!(custom_files.len(), 2);
+        assert!(custom_files.iter().any(|p| p.ends_with("cake.cook")));
+        assert!(custom_files.iter().any(|p| p.ends_with("page.MDX")));
+
+        // Explicit file path bypasses extension filter.
+        let explicit =
+            collect_markdown_files(&[dir.path().join("cake.cook")], &[], &default_exts).unwrap();
+        assert_eq!(explicit, vec![dir.path().join("cake.cook")]);
+
         // Nonexistent path errors.
-        assert!(collect_markdown_files(&[dir.path().join("nope.md")], &[]).is_err());
+        assert!(collect_markdown_files(&[dir.path().join("nope.md")], &[], &default_exts).is_err());
 
         // Invalid glob pattern errors.
-        assert!(
-            collect_markdown_files(&[dir.path().to_path_buf()], &["[unclosed".to_string()])
-                .is_err()
-        );
+        assert!(collect_markdown_files(
+            &[dir.path().to_path_buf()],
+            &["[unclosed".to_string()],
+            &default_exts
+        )
+        .is_err());
     }
 }

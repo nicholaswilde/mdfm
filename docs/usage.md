@@ -26,6 +26,7 @@ Global flags may be placed before or after the subcommand:
 | `--output <table\|json\|plain>` | `MDFM_OUTPUT` | `table` | Output presentation format |
 | `--where <EXPR>` | N/A | None | Filter files by evaluating a frontmatter predicate expression |
 | `-C`, `--config <PATH>` | `MDFM_CONFIG` | Auto-discover | Explicit configuration file path (`.toml`, `.yaml`, `.yml`, or `.json`) |
+| `--ext <EXT>` | N/A | `md,markdown` | File extensions to discover during directory walks (repeatable or comma-separated) |
 | `-h`, `--help` | N/A | N/A | Print command help |
 | `-V`, `--version` | N/A | N/A | Print `mdfm` version |
 
@@ -113,7 +114,7 @@ mdfm del draft author.bio posts/
 mdfm --where 'draft == false' del reviewer_notes posts/
 ```
 
-The first positional argument is always parsed as a key path. Subsequent arguments remain keys until an argument exists on disk or resembles a filesystem path (`.`, `..`, contains `/` or `\`, or ends with `.md`/`.markdown`). Files without frontmatter are skipped.
+The first positional argument is always parsed as a key path. Subsequent arguments remain keys until an argument exists on disk or resembles a filesystem path (`.`, `..`, contains `/` or `\`, or matches a configured extension such as `.md`/`.markdown`). Files without frontmatter are skipped.
 
 ## :mag_right: Filtering Files (`--where`)
 
@@ -196,12 +197,21 @@ Validate YAML and TOML frontmatter against any standard JSON Schema file (such a
 # Validate a directory with an explicit schema
 mdfm check --schema .mdfm-schema.json docs/
 
-# Emit machine-readable validation results as JSON
-mdfm --output json check --schema .mdfm-schema.json docs/
+# CI-friendly quiet mode: hide passing files and emit a compact summary
+mdfm check --errors-only --schema .mdfm-schema.json docs/
+mdfm check -q docs/
+
+# Emit machine-readable validation failures only as JSON
+mdfm --output json check --errors-only --schema .mdfm-schema.json docs/
 
 # Rely on `schema = ".mdfm-schema.json"` in .mdfm.toml or MDFM_SCHEMA
 mdfm check docs/
 ```
+
+When `--errors-only` (or `-q` / `--quiet`, or `errors_only = true` in `.mdfm.toml`) is enabled:
+
+- **`table` / `plain`:** Passing files are omitted and a compact summary line (`<ok> ok, <failed> failed`) is printed. When all files pass, only the summary line is emitted.
+- **`json`:** Only failing entries are included in the output JSON array (`[]` when all files pass).
 
 Files without frontmatter are validated as an empty JSON object (`{}`) unless filtered out by `--where`. Malformed YAML or TOML frontmatter is reported as a validation failure for that file.
 
@@ -251,8 +261,9 @@ All subcommands support `--output table` (default), `--output json`, and `--outp
 
 ## :file_folder: File Discovery & Ignore Rules
 
-When given directories (or no paths, defaulting to `.`), `mdfm` walks recursively for `.md` and `.markdown` files:
+When given directories (or no paths, defaulting to `.`), `mdfm` walks recursively for files matching the configured extensions (default: `.md` and `.markdown`):
 
+- Customize discovered extensions via repeatable or comma-separated `--ext` flags (e.g. `mdfm --ext cook --ext mdx get title .` or `mdfm --ext cook,mdx check .`) or `extensions = ["md", "cook"]` in `.mdfm.toml`. Extension matching is case-insensitive and strips any leading `.`.
 - Respects `.gitignore` rules (even outside an active Git repository).
 - Applies any additional `ignore` glob patterns configured in `.mdfm.toml` or global config (for example, `ignore = ["drafts/**", "CHANGELOG.md"]`).
-- Explicitly passed file paths are always processed directly.
+- Explicitly passed file paths are always processed directly regardless of extension.

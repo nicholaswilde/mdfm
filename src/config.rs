@@ -26,6 +26,36 @@ impl ConfigFormat {
     }
 }
 
+/// Default file extensions discovered during directory walks.
+pub const DEFAULT_EXTENSIONS: &[&str] = &["md", "markdown"];
+
+/// Return the default list of discovered file extensions (`["md", "markdown"]`).
+pub fn default_extensions() -> Vec<String> {
+    DEFAULT_EXTENSIONS
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect()
+}
+
+/// Normalize configured file extensions: trim whitespace, strip leading `.`, lowercase,
+/// deduplicate while preserving order, and reject empty entries or empty lists.
+pub fn normalize_extensions(raw: &[String]) -> Result<Vec<String>> {
+    let mut normalized = Vec::with_capacity(raw.len());
+    for entry in raw {
+        let cleaned = entry.trim().trim_start_matches('.').to_ascii_lowercase();
+        if cleaned.is_empty() {
+            anyhow::bail!("Invalid empty file extension '{entry}'");
+        }
+        if !normalized.contains(&cleaned) {
+            normalized.push(cleaned);
+        }
+    }
+    if normalized.is_empty() {
+        anyhow::bail!("Configured file extensions list cannot be empty");
+    }
+    Ok(normalized)
+}
+
 /// Representation of values loaded from a configuration file (`.mdfm.toml` or global config).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConfigFile {
@@ -33,6 +63,8 @@ pub struct ConfigFile {
     pub output: Option<OutputFormat>,
     pub schema: Option<PathBuf>,
     pub ignore: Option<Vec<String>>,
+    pub extensions: Option<Vec<String>>,
+    pub errors_only: Option<bool>,
 }
 
 impl ConfigFile {
@@ -140,6 +172,8 @@ pub struct ResolvedConfig {
     pub output: OutputFormat,
     pub schema: Option<PathBuf>,
     pub ignore: Vec<String>,
+    pub extensions: Vec<String>,
+    pub errors_only: bool,
 }
 
 impl Default for ResolvedConfig {
@@ -149,8 +183,21 @@ impl Default for ResolvedConfig {
             output: OutputFormat::Table,
             schema: None,
             ignore: Vec::new(),
+            extensions: default_extensions(),
+            errors_only: false,
         }
     }
+}
+
+/// Command-line overrides applied at the top of the configuration precedence chain.
+#[derive(Debug, Default, Clone)]
+pub struct CliOverrides<'a> {
+    pub config_path: Option<&'a Path>,
+    pub format: Option<Format>,
+    pub output: Option<OutputFormat>,
+    pub schema: Option<&'a Path>,
+    pub extensions: Option<&'a [String]>,
+    pub errors_only: Option<bool>,
 }
 
 fn parse_format_env(raw: &str) -> Result<Format> {
@@ -186,26 +233,18 @@ fn resolve_schema_relative_to_config(schema: PathBuf, config_path: &Path) -> Pat
 }
 
 /// Resolve configuration using the current working directory.
-pub fn resolve_configuration(
-    cli_config_path: Option<&Path>,
-    cli_format: Option<Format>,
-    cli_output: Option<OutputFormat>,
-    cli_schema: Option<&Path>,
-) -> Result<ResolvedConfig> {
+pub fn resolve_configuration(overrides: &CliOverrides<'_>) -> Result<ResolvedConfig> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    resolve_configuration_from_dir(&cwd, cli_config_path, cli_format, cli_output, cli_schema)
+    resolve_configuration_from_dir(&cwd, overrides)
 }
 
 /// Resolve configuration starting local `.mdfm.toml` discovery from `cwd`.
 pub fn resolve_configuration_from_dir(
     cwd: &Path,
-    cli_config_path: Option<&Path>,
-    cli_format: Option<Format>,
-    cli_output: Option<OutputFormat>,
-    cli_schema: Option<&Path>,
+    overrides: &CliOverrides<'_>,
 ) -> Result<ResolvedConfig> {
     // Determine explicit config path from CLI or MDFM_CONFIG env var.
-    let explicit_path = cli_config_path.map(Path::to_path_buf).or_else(|| {
+    let explicit_path = overrides.config_path.map(Path::to_path_buf).or_else(|| {
         std::env::var("MDFM_CONFIG")
             .ok()
             .map(|s| s.trim().to_string())
@@ -238,7 +277,7 @@ pub fn resolve_configuration_from_dir(
     };
 
     // 1. default_format: CLI > MDFM_FORMAT > local > global > default (Yaml)
-    let default_format = if let Some(fmt) = cli_format {
+    let default_format = if let Some(fmt) = overrides.format {
         fmt
     } else if let Ok(env_fmt) = std::env::var("MDFM_FORMAT") {
         if !env_fmt.trim().is_empty() {
@@ -259,7 +298,7 @@ pub fn resolve_configuration_from_dir(
     };
 
     // 2. output: CLI > MDFM_OUTPUT > local > global > default (Table)
-    let output = if let Some(out) = cli_output {
+    let output = if let Some(out) = overrides.output {
         out
     } else if let Ok(env_out) = std::env::var("MDFM_OUTPUT") {
         if !env_out.trim().is_empty() {
@@ -280,7 +319,7 @@ pub fn resolve_configuration_from_dir(
     };
 
     // 3. schema: CLI > MDFM_SCHEMA > local > global > None
-    let schema = if let Some(s) = cli_schema {
+    let schema = if let Some(s) = overrides.schema {
         Some(s.to_path_buf())
     } else if let Ok(env_schema) = std::env::var("MDFM_SCHEMA") {
         let trimmed = env_schema.trim();
@@ -313,11 +352,37 @@ pub fn resolve_configuration_from_dir(
         .or_else(|| global_cfg.as_ref().and_then(|(_, c)| c.ignore.clone()))
         .unwrap_or_default();
 
+    // 5. extensions: CLI > local > global > ["md", "markdown"]
+    let extensions = if let Some(exts) = overrides.extensions {
+        normalize_extensions(exts)?
+    } else if let Some(exts) = local_cfg
+        .as_ref()
+        .and_then(|(_, c)| c.extensions.as_deref())
+        .or_else(|| {
+            global_cfg
+                .as_ref()
+                .and_then(|(_, c)| c.extensions.as_deref())
+        })
+    {
+        normalize_extensions(exts)?
+    } else {
+        default_extensions()
+    };
+
+    // 6. errors_only: CLI > local > global > false
+    let errors_only = overrides
+        .errors_only
+        .or_else(|| local_cfg.as_ref().and_then(|(_, c)| c.errors_only))
+        .or_else(|| global_cfg.as_ref().and_then(|(_, c)| c.errors_only))
+        .unwrap_or(false);
+
     Ok(ResolvedConfig {
         default_format,
         output,
         schema,
         ignore,
+        extensions,
+        errors_only,
     })
 }
 
@@ -366,6 +431,8 @@ default_format = "toml"
 output = "json"
 schema = ".mdfm-schema.json"
 ignore = ["drafts/**", "README.md"]
+extensions = ["md", ".cook", "MDX"]
+errors_only = true
 "#;
         let cfg = ConfigFile::parse(content, ConfigFormat::Toml).unwrap();
         assert_eq!(cfg.default_format, Some(Format::Toml));
@@ -375,6 +442,32 @@ ignore = ["drafts/**", "README.md"]
             cfg.ignore,
             Some(vec!["drafts/**".to_string(), "README.md".to_string()])
         );
+        assert_eq!(
+            cfg.extensions,
+            Some(vec![
+                "md".to_string(),
+                ".cook".to_string(),
+                "MDX".to_string()
+            ])
+        );
+        assert_eq!(cfg.errors_only, Some(true));
+    }
+
+    #[test]
+    fn normalize_extensions_rules() {
+        assert_eq!(
+            normalize_extensions(&[
+                ".COOK".to_string(),
+                " mdx ".to_string(),
+                "cook".to_string(),
+                "..md".to_string(),
+            ])
+            .unwrap(),
+            vec!["cook", "mdx", "md"]
+        );
+        assert!(normalize_extensions(&[]).is_err());
+        assert!(normalize_extensions(&["".to_string()]).is_err());
+        assert!(normalize_extensions(&[".".to_string()]).is_err());
     }
 
     #[test]
@@ -421,6 +514,8 @@ ignore = ["drafts/**", "README.md"]
         assert_eq!(def.output, OutputFormat::Table);
         assert!(def.schema.is_none());
         assert!(def.ignore.is_empty());
+        assert_eq!(def.extensions, vec!["md", "markdown"]);
+        assert!(!def.errors_only);
 
         assert_eq!(parse_format_env("YAML").unwrap(), Format::Yaml);
         assert_eq!(parse_format_env("yml").unwrap(), Format::Yaml);
@@ -467,43 +562,75 @@ ignore = ["drafts/**", "README.md"]
         let cfg_path = dir.path().join("custom.toml");
         fs::write(
             &cfg_path,
-            "default_format = \"toml\"\noutput = \"plain\"\nschema = \"schema.json\"\nignore = [\"tmp/**\"]\n",
+            "default_format = \"toml\"\noutput = \"plain\"\nschema = \"schema.json\"\nignore = [\"tmp/**\"]\nextensions = [\".cook\", \"MD\"]\nerrors_only = true\n",
         )
         .unwrap();
 
         // Explicit config overrides defaults.
-        let resolved =
-            resolve_configuration_from_dir(dir.path(), Some(&cfg_path), None, None, None).unwrap();
+        let resolved = resolve_configuration_from_dir(
+            dir.path(),
+            &CliOverrides {
+                config_path: Some(&cfg_path),
+                ..CliOverrides::default()
+            },
+        )
+        .unwrap();
         assert_eq!(resolved.default_format, Format::Toml);
         assert_eq!(resolved.output, OutputFormat::Plain);
         assert_eq!(resolved.schema, Some(PathBuf::from("schema.json")));
         assert_eq!(resolved.ignore, vec!["tmp/**".to_string()]);
+        assert_eq!(resolved.extensions, vec!["cook", "md"]);
+        assert!(resolved.errors_only);
 
         // CLI flags override explicit config.
+        let cli_exts = vec![".MDX".to_string()];
         let resolved_cli = resolve_configuration_from_dir(
             dir.path(),
-            Some(&cfg_path),
-            Some(Format::Yaml),
-            Some(OutputFormat::Json),
-            Some(Path::new("override.json")),
+            &CliOverrides {
+                config_path: Some(&cfg_path),
+                format: Some(Format::Yaml),
+                output: Some(OutputFormat::Json),
+                schema: Some(Path::new("override.json")),
+                extensions: Some(&cli_exts),
+                errors_only: Some(false),
+            },
         )
         .unwrap();
         assert_eq!(resolved_cli.default_format, Format::Yaml);
         assert_eq!(resolved_cli.output, OutputFormat::Json);
         assert_eq!(resolved_cli.schema, Some(PathBuf::from("override.json")));
+        assert_eq!(resolved_cli.extensions, vec!["mdx"]);
+        assert!(!resolved_cli.errors_only);
+
+        // Empty configured extensions list fails validation.
+        let bad_ext_cfg = dir.path().join("bad_ext.toml");
+        fs::write(&bad_ext_cfg, "extensions = []\n").unwrap();
+        assert!(resolve_configuration_from_dir(
+            dir.path(),
+            &CliOverrides {
+                config_path: Some(&bad_ext_cfg),
+                ..CliOverrides::default()
+            }
+        )
+        .is_err());
 
         // Error on nonexistent path or directory passed as explicit config.
         assert!(resolve_configuration_from_dir(
             dir.path(),
-            Some(&dir.path().join("nope.toml")),
-            None,
-            None,
-            None
+            &CliOverrides {
+                config_path: Some(&dir.path().join("nope.toml")),
+                ..CliOverrides::default()
+            }
         )
         .is_err());
-        assert!(
-            resolve_configuration_from_dir(dir.path(), Some(dir.path()), None, None, None).is_err()
-        );
+        assert!(resolve_configuration_from_dir(
+            dir.path(),
+            &CliOverrides {
+                config_path: Some(dir.path()),
+                ..CliOverrides::default()
+            }
+        )
+        .is_err());
     }
 
     #[test]
@@ -540,24 +667,27 @@ ignore = ["drafts/**", "README.md"]
         fs::write(&global_schema, "{}").unwrap();
         fs::write(
             global_dir.join("config.yaml"),
-            "default_format: toml\noutput: plain\nschema: global-schema.json\nignore:\n  - g/**\n",
+            "default_format: toml\noutput: plain\nschema: global-schema.json\nignore:\n  - g/**\nextensions:\n  - cook\n  - md\nerrors_only: true\n",
         )
         .unwrap();
 
         // Global config discovery via XDG_CONFIG_HOME.
         env.set("XDG_CONFIG_HOME", xdg.to_str().unwrap());
-        let resolved = resolve_configuration_from_dir(dir.path(), None, None, None, None).unwrap();
+        let resolved =
+            resolve_configuration_from_dir(dir.path(), &CliOverrides::default()).unwrap();
         assert_eq!(resolved.default_format, Format::Toml);
         assert_eq!(resolved.output, OutputFormat::Plain);
         assert_eq!(resolved.schema, Some(global_schema));
         assert_eq!(resolved.ignore, vec!["g/**".to_string()]);
+        assert_eq!(resolved.extensions, vec!["cook", "md"]);
+        assert!(resolved.errors_only);
 
         // Empty/whitespace MDFM_* env vars fall back to config values.
         env.set("MDFM_FORMAT", "   ");
         env.set("MDFM_OUTPUT", " ");
         env.set("MDFM_SCHEMA", " ");
         let resolved_ws =
-            resolve_configuration_from_dir(dir.path(), None, None, None, None).unwrap();
+            resolve_configuration_from_dir(dir.path(), &CliOverrides::default()).unwrap();
         assert_eq!(resolved_ws.default_format, Format::Toml);
         assert_eq!(resolved_ws.output, OutputFormat::Plain);
         assert_eq!(resolved_ws.schema, None);
@@ -567,7 +697,7 @@ ignore = ["drafts/**", "README.md"]
         env.set("MDFM_OUTPUT", "json");
         env.set("MDFM_SCHEMA", "env-schema.json");
         let resolved_env =
-            resolve_configuration_from_dir(dir.path(), None, None, None, None).unwrap();
+            resolve_configuration_from_dir(dir.path(), &CliOverrides::default()).unwrap();
         assert_eq!(resolved_env.default_format, Format::Yaml);
         assert_eq!(resolved_env.output, OutputFormat::Json);
         assert_eq!(resolved_env.schema, Some(PathBuf::from("env-schema.json")));
@@ -584,9 +714,11 @@ ignore = ["drafts/**", "README.md"]
         env.remove("MDFM_SCHEMA");
         env.set("MDFM_CONFIG", json_cfg_path.to_str().unwrap());
         let resolved_cfg =
-            resolve_configuration_from_dir(dir.path(), None, None, None, None).unwrap();
+            resolve_configuration_from_dir(dir.path(), &CliOverrides::default()).unwrap();
         assert_eq!(resolved_cfg.default_format, Format::Toml);
         assert_eq!(resolved_cfg.output, OutputFormat::Plain);
+        assert_eq!(resolved_cfg.extensions, vec!["md", "markdown"]);
+        assert!(!resolved_cfg.errors_only);
 
         // default_global_config_paths fallback order: HOME -> APPDATA -> USERPROFILE -> none.
         env.remove("XDG_CONFIG_HOME");

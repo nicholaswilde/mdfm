@@ -139,6 +139,7 @@ Usage: mdfm [OPTIONS] <COMMAND>
 | `--output <OUTPUT>` | `MDFM_OUTPUT` | `table` (default), `json`, `plain` | Output presentation format |
 | `--where <EXPR>` | — | Filter expression | Filter target files by frontmatter predicate before running command |
 | `-C, --config <PATH>` | `MDFM_CONFIG` | File path | Explicit configuration file override (TOML, YAML, or JSON) |
+| `--ext <EXT>` | — | `md,markdown` | File extensions discovered during directory walks (repeatable or comma-separated) |
 | `-h, --help` | — | — | Print help |
 | `-V, --version` | — | — | Print version (`PROJECT_VERSION` from git describe) |
 
@@ -187,23 +188,25 @@ mdfm --format toml set title=Created draft=false notes/plain.md
 Delete one or more frontmatter keys (including nested dot paths).
 
 - **`--dry-run`:** Preview deletions without writing to disk.
-- **Argument partitioning:** First positional argument is always a key; subsequent arguments are treated as keys until a path-like token (`.`, `..`, containing `/` or `\`, or ending in `.md`/`.markdown`, or existing on disk) begins the target paths list (defaults to `.`).
+- **Argument partitioning:** First positional argument is always a key; subsequent arguments are treated as keys until a path-like token (`.`, `..`, containing `/` or `\`, matching a configured extension such as `.md`/`.markdown`, or existing on disk) begins the target paths list (defaults to `.`).
 
 ```bash
 mdfm del draft author.bio posts/ --dry-run
 mdfm del draft legacy_id posts/
 ```
 
-### `mdfm check [--schema <SCHEMA>] [PATHS]...`
+### `mdfm check [--schema <SCHEMA>] [-q|--errors-only|--quiet] [PATHS]...`
 
-Validate frontmatter of Markdown files against a JSON Schema file (`--schema`, `MDFM_SCHEMA`, or `schema` in config).
+Validate frontmatter of discovered files against a JSON Schema file (`--schema`, `MDFM_SCHEMA`, or `schema` in config).
 
 - Exits `0` when all matched files validate cleanly.
 - Exits non-zero with file-level validation error details (`ok` / `fail` in `table`, structured objects in `json`, `<file>\terror: ...` in `plain`) when any file fails parsing or schema validation.
+- With `-q` / `--errors-only` / `--quiet` (or `errors_only = true` in `.mdfm.toml`): hides passing entries, prints `<ok> ok, <failed> failed` in `table`/`plain` modes, and emits only failing entries (`[]` when all pass) in `json` mode.
 
 ```bash
 mdfm check --schema .mdfm-schema.json posts/
-mdfm --output json check --schema schema.json docs/
+mdfm check --errors-only --schema .mdfm-schema.json posts/
+mdfm --output json check --errors-only --schema schema.json docs/
 ```
 
 ### `mdfm completions <SHELL>`
@@ -253,13 +256,13 @@ mdfm --where '(draft == false or weight >= 10) and not (author.name == "Bob")' g
 
 `mdfm` resolves settings in strict precedence order (highest to lowest):
 
-1. **CLI flags:** `--format`, `--output`, `--schema`, `-C`/`--config`
+1. **CLI flags:** `--format`, `--output`, `--schema`, `--ext`, `--errors-only` / `-q` / `--quiet`, `-C`/`--config`
 2. **Environment variables:** `MDFM_FORMAT`, `MDFM_OUTPUT`, `MDFM_SCHEMA`, `MDFM_CONFIG`
 3. **Explicit config or project-local `.mdfm.toml`:** Walks upward from the current working directory to find `.mdfm.toml` (unless overridden by `--config` / `MDFM_CONFIG`, which supports TOML, YAML, or JSON).
 4. **User global config:**
    - Linux/macOS: `$XDG_CONFIG_HOME/mdfm/config.{toml,yaml,yml,json}` (fallback `~/.config/mdfm/config.*`)
    - Windows: `%APPDATA%\mdfm\config.{toml,yaml,yml,json}`
-5. **Built-in defaults:** `default_format = "yaml"`, `output = "table"`, `schema = None`, `ignore = []`
+5. **Built-in defaults:** `default_format = "yaml"`, `output = "table"`, `schema = None`, `ignore = []`, `extensions = ["md", "markdown"]`, `errors_only = false`
 
 ### Example `.mdfm.toml`
 
@@ -277,6 +280,12 @@ schema = ".mdfm-schema.json"
 
 # Glob patterns to exclude when walking directories (in addition to .gitignore).
 ignore = ["drafts/**", "CHANGELOG.md"]
+
+# File extensions discovered during directory walks.
+extensions = ["md", "markdown"]
+
+# Only show validation failures and a compact summary line in `mdfm check`.
+errors_only = false
 ```
 
 ---
@@ -291,7 +300,7 @@ ignore = ["drafts/**", "CHANGELOG.md"]
   - Keeps `body: &'a str` as an untouched slice of the original input string; rendering concatenates BOM + delimiters + normalized frontmatter + verbatim `body`.
 - **YAML Handling (`src/frontmatter/yaml.rs`):** Parses into `serde_yaml_ng::Mapping`, supports nested dot-path get/set/del, empty/comment-only blocks parse cleanly as empty mappings.
 - **TOML Handling (`src/frontmatter/toml.rs`):** Parses into `toml_edit::DocumentMut` for lossless dot-path mutation across standard and inline tables.
-- **File Discovery (`src/commands/mod.rs`):** Collects `.md` and `.markdown` files deterministically (sorted paths), respecting `.gitignore` via `ignore::WalkBuilder` and config `ignore` globs.
+- **File Discovery (`src/commands/mod.rs`):** Collects files matching configured `extensions` (default `.md` and `.markdown`, case-insensitive) deterministically (sorted paths), respecting `.gitignore` via `ignore::WalkBuilder` and config `ignore` globs.
 
 ---
 

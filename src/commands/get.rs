@@ -26,7 +26,7 @@ pub fn execute(
     out: &mut dyn Write,
 ) -> Result<()> {
     let single_explicit_file = paths.len() == 1 && paths[0].is_file();
-    let files = collect_markdown_files(paths, &config.ignore)?;
+    let files = collect_markdown_files(paths, &config.ignore, &config.extensions)?;
     let mut entries = Vec::new();
 
     for path in files {

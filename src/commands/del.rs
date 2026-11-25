@@ -6,8 +6,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::cli::OutputFormat;
-use crate::commands::{build_table, collect_markdown_files};
-use crate::config::ResolvedConfig;
+use crate::commands::{build_table, collect_markdown_files, has_matching_extension};
+use crate::config::{default_extensions, ResolvedConfig};
 use crate::frontmatter;
 use crate::frontmatter::filter::FilterExpr;
 
@@ -19,7 +19,7 @@ struct DelEntry {
     deleted: Vec<String>,
 }
 
-fn is_likely_path(arg: &str) -> bool {
+fn is_likely_path(arg: &str, extensions: &[String]) -> bool {
     let p = Path::new(arg);
     if p.exists() {
         return true;
@@ -28,12 +28,15 @@ fn is_likely_path(arg: &str) -> bool {
         || arg == ".."
         || arg.contains('/')
         || arg.contains('\\')
-        || arg.ends_with(".md")
-        || arg.ends_with(".markdown")
+        || has_matching_extension(p, extensions)
 }
 
-/// Partition positional `args` into key paths to delete (index 0 is always a key) and target paths.
-pub fn parse_del_args(args: &[String]) -> Result<(Vec<String>, Vec<PathBuf>)> {
+/// Partition positional `args` into key paths to delete (index 0 is always a key) and target paths,
+/// recognizing configured file extensions when distinguishing paths from key names.
+pub fn parse_del_args_with_extensions(
+    args: &[String],
+    extensions: &[String],
+) -> Result<(Vec<String>, Vec<PathBuf>)> {
     if args.is_empty() {
         anyhow::bail!("Expected at least one key to delete");
     }
@@ -47,7 +50,7 @@ pub fn parse_del_args(args: &[String]) -> Result<(Vec<String>, Vec<PathBuf>)> {
             keys.push(arg.clone());
             continue;
         }
-        if !in_paths && is_likely_path(arg) {
+        if !in_paths && is_likely_path(arg, extensions) {
             in_paths = true;
         }
         if in_paths {
@@ -60,6 +63,11 @@ pub fn parse_del_args(args: &[String]) -> Result<(Vec<String>, Vec<PathBuf>)> {
     Ok((keys, paths))
 }
 
+/// Partition positional `args` into key paths to delete (index 0 is always a key) and target paths.
+pub fn parse_del_args(args: &[String]) -> Result<(Vec<String>, Vec<PathBuf>)> {
+    parse_del_args_with_extensions(args, &default_extensions())
+}
+
 pub fn execute(
     args: &[String],
     dry_run: bool,
@@ -67,8 +75,8 @@ pub fn execute(
     config: &ResolvedConfig,
     out: &mut dyn Write,
 ) -> Result<()> {
-    let (keys, paths) = parse_del_args(args)?;
-    let files = collect_markdown_files(&paths, &config.ignore)?;
+    let (keys, paths) = parse_del_args_with_extensions(args, &config.extensions)?;
+    let files = collect_markdown_files(&paths, &config.ignore, &config.extensions)?;
     let mut results = Vec::new();
 
     for path in files {
@@ -309,5 +317,14 @@ mod tests {
             &mut err_out
         )
         .is_err());
+
+        // Custom extensions recognized as path targets in parse_del_args_with_extensions.
+        let (keys, paths) = parse_del_args_with_extensions(
+            &["draft".to_string(), "recipe.cook".to_string()],
+            &["cook".to_string()],
+        )
+        .unwrap();
+        assert_eq!(keys, vec!["draft"]);
+        assert_eq!(paths, vec![PathBuf::from("recipe.cook")]);
     }
 }

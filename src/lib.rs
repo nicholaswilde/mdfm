@@ -6,7 +6,7 @@ pub mod frontmatter;
 use std::io::{self, Write};
 
 pub use cli::{Cli, CommandFactory, Commands, OutputFormat};
-pub use config::{ConfigFile, ConfigFormat, ResolvedConfig};
+pub use config::{CliOverrides, ConfigFile, ConfigFormat, ResolvedConfig};
 pub use frontmatter::{
     ClosingDelimiter, Format, FrontmatterBlock, FrontmatterData, FrontmatterError, LineEnding,
     SplitDocument,
@@ -46,13 +46,23 @@ pub fn run_app(cli: Cli, out: &mut dyn Write) -> anyhow::Result<()> {
         _ => {}
     }
 
-    let cli_schema = match &cli.command {
-        Commands::Check { schema, .. } => schema.as_deref(),
-        _ => None,
+    let (cli_schema, cli_errors_only) = match &cli.command {
+        Commands::Check {
+            schema,
+            errors_only,
+            ..
+        } => (schema.as_deref(), (*errors_only).then_some(true)),
+        _ => (None, None),
     };
 
-    let resolved =
-        config::resolve_configuration(cli.config.as_deref(), cli.format, cli.output, cli_schema)?;
+    let resolved = config::resolve_configuration(&config::CliOverrides {
+        config_path: cli.config.as_deref(),
+        format: cli.format,
+        output: cli.output,
+        schema: cli_schema,
+        extensions: (!cli.ext.is_empty()).then_some(cli.ext.as_slice()),
+        errors_only: cli_errors_only,
+    })?;
 
     let filter = commands::compile_filter(cli.where_expr.as_deref())?;
 
@@ -130,16 +140,50 @@ mod tests {
             _ => panic!("expected del subcommand"),
         }
 
-        let check_cli =
-            Cli::try_parse_from(["mdfm", "check", "docs/", "--schema", ".mdfm-schema.json"])
-                .unwrap();
+        let check_cli = Cli::try_parse_from([
+            "mdfm",
+            "--ext",
+            "cook",
+            "--ext",
+            "mdx,md",
+            "check",
+            "docs/",
+            "--schema",
+            ".mdfm-schema.json",
+            "--errors-only",
+        ])
+        .unwrap();
+        assert_eq!(check_cli.ext, vec!["cook", "mdx", "md"]);
         match check_cli.command {
-            Commands::Check { paths, schema } => {
+            Commands::Check {
+                paths,
+                schema,
+                errors_only,
+            } => {
                 assert_eq!(paths, vec![PathBuf::from("docs/")]);
                 assert_eq!(schema, Some(PathBuf::from(".mdfm-schema.json")));
+                assert!(errors_only);
             }
             _ => panic!("expected check subcommand"),
         }
+
+        let quiet_short = Cli::try_parse_from(["mdfm", "check", "-q", "docs/"]).unwrap();
+        assert!(matches!(
+            quiet_short.command,
+            Commands::Check {
+                errors_only: true,
+                ..
+            }
+        ));
+
+        let quiet_alias = Cli::try_parse_from(["mdfm", "check", "--quiet", "docs/"]).unwrap();
+        assert!(matches!(
+            quiet_alias.command,
+            Commands::Check {
+                errors_only: true,
+                ..
+            }
+        ));
     }
 
     #[test]

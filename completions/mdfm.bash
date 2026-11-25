@@ -71,7 +71,7 @@ _mdfm() {
 
     case "${cmd}" in
         mdfm)
-            opts="-C -h -V --format --output --where --config --help --version get set del check completions man update help"
+            opts="-C -h -V --format --output --where --config --ext --help --version get set del check completions man update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -97,6 +97,10 @@ _mdfm() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --ext)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -105,7 +109,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__check)
-            opts="-C -h --schema --format --output --where --config --help"
+            opts="-q -C -h --schema --quiet --errors-only --format --output --where --config --ext --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -135,6 +139,10 @@ _mdfm() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --ext)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -143,7 +151,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__completions)
-            opts="-C -h --format --output --where --config --help bash elvish fish powershell zsh"
+            opts="-C -h --format --output --where --config --ext --help bash elvish fish powershell zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -166,6 +174,10 @@ _mdfm() {
                     return 0
                     ;;
                 -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ext)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -177,7 +189,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__del)
-            opts="-C -h --dry-run --format --output --where --config --help"
+            opts="-C -h --dry-run --format --output --where --config --ext --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -200,6 +212,10 @@ _mdfm() {
                     return 0
                     ;;
                 -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ext)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -211,7 +227,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__get)
-            opts="-C -h --format --output --where --config --help"
+            opts="-C -h --format --output --where --config --ext --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -234,6 +250,10 @@ _mdfm() {
                     return 0
                     ;;
                 -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ext)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -371,7 +391,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__man)
-            opts="-C -h --format --output --where --config --help"
+            opts="-C -h --format --output --where --config --ext --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -394,6 +414,10 @@ _mdfm() {
                     return 0
                     ;;
                 -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ext)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -405,7 +429,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__set)
-            opts="-C -h --dry-run --format --output --where --config --help"
+            opts="-C -h --dry-run --format --output --where --config --ext --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -431,6 +455,10 @@ _mdfm() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --ext)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -439,7 +467,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__update)
-            opts="-y -C -h --check --yes --version --format --output --where --config --help"
+            opts="-y -C -h --check --yes --version --format --output --where --config --ext --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -466,6 +494,10 @@ _mdfm() {
                     return 0
                     ;;
                 -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ext)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

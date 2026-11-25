@@ -129,7 +129,7 @@ pub fn execute(
     out: &mut dyn Write,
 ) -> Result<()> {
     let (assignments, paths) = parse_set_args(args)?;
-    let files = collect_markdown_files(&paths, &config.ignore)?;
+    let files = collect_markdown_files(&paths, &config.ignore, &config.extensions)?;
     let mut results = Vec::new();
 
     for path in files {

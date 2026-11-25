@@ -25,3 +25,11 @@
 
 # Glob patterns to exclude when walking directories (in addition to .gitignore).
 # ignore = ["drafts/**", "CHANGELOG.md"]
+
+# File extensions to discover during directory walks (case-insensitive, leading '.' optional).
+# CLI: --ext <ext> (repeatable or comma-separated)
+# extensions = ["md", "markdown"]
+
+# Only show validation failures and a compact summary line in `mdfm check`.
+# CLI: --errors-only | -q | --quiet
+# errors_only = false

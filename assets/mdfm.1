@@ -1,10 +1,10 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH mdfm 1  "mdfm v0.1.0" 
+.TH mdfm 1  "mdfm v0.1.1" 
 .SH NAME
 mdfm \- jq for Markdown frontmatter: query, mutate, delete, and validate YAML and TOML frontmatter
 .SH SYNOPSIS
-\fBmdfm\fR [\fB\-\-format\fR] [\fB\-\-output\fR] [\fB\-\-where\fR] [\fB\-C\fR|\fB\-\-config\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+\fBmdfm\fR [\fB\-\-format\fR] [\fB\-\-output\fR] [\fB\-\-where\fR] [\fB\-C\fR|\fB\-\-config\fR] [\fB\-\-ext\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
 .SH DESCRIPTION
 jq for Markdown frontmatter: query, mutate, delete, and validate YAML and TOML frontmatter
 .SH OPTIONS
@@ -43,6 +43,9 @@ Optional filter expression (e.g. \*(Aqdraft == true\*(Aq, \*(Aqauthor.name == "N
 \fB\-C\fR, \fB\-\-config\fR \fI<CONFIG>\fR
 Path to explicit configuration file override (TOML, YAML, or JSON)
 .TP
+\fB\-\-ext\fR \fI<EXT>\fR
+File extensions to include when walking directories (repeatable or comma\-separated; defaults to md,markdown)
+.TP
 \fB\-h\fR, \fB\-\-help\fR
 Print help
 .TP
@@ -74,6 +77,6 @@ Check for and install the latest mdfm release from GitHub
 mdfm\-help(1)
 Print this message or the help of the given subcommand(s)
 .SH VERSION
-vv0.1.0
+vv0.1.1
 .SH AUTHORS
 Nicholas Wilde
