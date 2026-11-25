@@ -1,6 +1,6 @@
 [package]
 name = "mdfm"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 authors = ["Nicholas Wilde"]
 description = "jq for Markdown frontmatter: query, mutate, delete, and validate YAML and TOML frontmatter without modifying the Markdown body"
