@@ -38,8 +38,12 @@ Debian/Ubuntu `.deb` packages are also published via [`nicholaswilde/apt`](https
 ### :gear:&nbsp; Usage
 
 ```bash
-# Query a frontmatter key (supports dot paths)
-mdfm get author.name docs/
+# Query one or more frontmatter keys, or dump full frontmatter with '.'
+mdfm get title,tags docs/
+mdfm --output json get . docs/ | jq '.[].value'
+
+# List matching files only (-l) and filter by frontmatter presence
+mdfm --where 'not has_frontmatter' -l get . docs/
 
 # Filter files with --where and emit JSON
 mdfm --where 'draft == true' --output json get title posts/

@@ -15,8 +15,8 @@
 # default_format = "yaml"
 
 # Output format for command results.
-# Supported values: "table" (default), "json", "plain"
-# CLI: --output <table|json|plain> | Env: MDFM_OUTPUT
+# Supported values: "table" (default), "json", "plain", "files"
+# CLI: --output <table|json|plain|files> (or -l / --files-only) | Env: MDFM_OUTPUT
 # output = "table"
 
 # Default JSON Schema path for `mdfm check`.

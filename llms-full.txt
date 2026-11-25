@@ -136,27 +136,30 @@ Usage: mdfm [OPTIONS] <COMMAND>
 | Flag | Env Var | Values / Default | Description |
 | --- | --- | --- | --- |
 | `--format <FORMAT>` | `MDFM_FORMAT` | `yaml` (default), `toml` | Frontmatter format used when creating frontmatter on files without any |
-| `--output <OUTPUT>` | `MDFM_OUTPUT` | `table` (default), `json`, `plain` | Output presentation format |
+| `--output <OUTPUT>` | `MDFM_OUTPUT` | `table` (default), `json`, `plain`, `files` | Output presentation format |
+| `-l, --files-only` | — | `false` | Print only matching file paths, one per line (shorthand for `--output files`) |
 | `--where <EXPR>` | — | Filter expression | Filter target files by frontmatter predicate before running command |
 | `-C, --config <PATH>` | `MDFM_CONFIG` | File path | Explicit configuration file override (TOML, YAML, or JSON) |
 | `--ext <EXT>` | — | `md,markdown` | File extensions discovered during directory walks (repeatable or comma-separated) |
 | `-h, --help` | — | — | Print help |
 | `-V, --version` | — | — | Print version (`PROJECT_VERSION` from git describe) |
 
-### `mdfm get <KEY> [PATHS]...`
+### `mdfm get [-k|--key <KEY>]... [<KEY>] [PATHS]...`
 
-Query a frontmatter key (supporting dot paths like `author.name`) across Markdown files. Defaults to `.` when `[PATHS]...` is omitted.
+Query one or more frontmatter keys (dot paths, comma-separated `title,tags`, repeatable `-k`/`--key`) or dump the full frontmatter object with `.`. Defaults to `.` for paths when omitted.
 
-- **`table`:** Two-column table (`File`, `Value`).
-- **`json`:** JSON array of `{ "file": "...", "value": ... }` objects.
-- **`plain`:** Single explicit file prints raw scalar value (`Nick`); multiple files or directory prints `<file>\t<value>`.
+- **`table`:** Two-column table (`File`, `<key>` or `Frontmatter`) or multi-column table (`File`, `<k1>`, `<k2>`, ...).
+- **`json`:** Single/root emits `[{ "file": "...", "key": "...", "value": ... }]`; multi-key emits `[{ "file": "...", "values": { ... } }]`.
+- **`plain`:** Single explicit file prints tab-delimited values (or raw JSON object for `.`); multiple files/dir prefix with `<file>\t`.
+- **`files` (`-l` / `--files-only`):** Matching file paths, one per line.
 
 ```bash
-# Single file scalar query
+# Single, multi-key, and full frontmatter queries
 mdfm --output plain get author.name posts/hello.md
-
-# Directory query filtered by --where as JSON
-mdfm --where 'draft == true' --output json get title posts/
+mdfm get title,tags docs/
+mdfm get -k title -k tags docs/
+mdfm --output json get . posts/ | jq '.[].value'
+mdfm --where 'not has_frontmatter' -l get . docs/
 ```
 
 ### `mdfm set [--dry-run] <KEY=VALUE [PATHS...]>...`
@@ -240,6 +243,7 @@ Implemented in `src/frontmatter/filter.rs` as a recursive-descent parser evaluat
   - `and` / `AND` / `&&`
   - `or` / `OR` / `||` (lowest precedence)
   - Parentheses `(...)` for explicit grouping
+- **Document metadata predicates:** `has_frontmatter` (`true`/`false`) and `frontmatter_format` (`"yaml"`, `"toml"`, or `null`) distinguish body-only files from empty frontmatter blocks; quote `"has_frontmatter"` to query a literal key of the same name.
 - **Literals:** Quoted strings (`"..."` or `'...'` with escape handling), booleans (`true`, `false`), `null`, integers, floats.
 
 ### Examples

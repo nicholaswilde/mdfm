@@ -55,10 +55,16 @@ pub fn run_app(cli: Cli, out: &mut dyn Write) -> anyhow::Result<()> {
         _ => (None, None),
     };
 
+    let cli_output = if cli.files_only {
+        Some(OutputFormat::Files)
+    } else {
+        cli.output
+    };
+
     let resolved = config::resolve_configuration(&config::CliOverrides {
         config_path: cli.config.as_deref(),
         format: cli.format,
-        output: cli.output,
+        output: cli_output,
         schema: cli_schema,
         extensions: (!cli.ext.is_empty()).then_some(cli.ext.as_slice()),
         errors_only: cli_errors_only,
@@ -67,8 +73,8 @@ pub fn run_app(cli: Cli, out: &mut dyn Write) -> anyhow::Result<()> {
     let filter = commands::compile_filter(cli.where_expr.as_deref())?;
 
     match &cli.command {
-        Commands::Get { key, paths } => {
-            commands::get::execute(key, paths, filter.as_ref(), &resolved, out)
+        Commands::Get { keys, args } => {
+            commands::get::execute(keys, args, filter.as_ref(), &resolved, out)
         }
         Commands::Set { args, dry_run } => {
             commands::set::execute(args, *dry_run, filter.as_ref(), &resolved, out)
@@ -108,11 +114,24 @@ mod tests {
 
         assert_eq!(cli.format, Some(Format::Toml));
         assert_eq!(cli.output, Some(OutputFormat::Json));
+        assert!(!cli.files_only);
         assert_eq!(cli.where_expr.as_deref(), Some("draft == true"));
         match cli.command {
-            Commands::Get { key, paths } => {
-                assert_eq!(key, "author.name");
-                assert_eq!(paths, vec![PathBuf::from("posts/")]);
+            Commands::Get { keys, args } => {
+                assert!(keys.is_empty());
+                assert_eq!(args, vec!["author.name", "posts/"]);
+            }
+            _ => panic!("expected get subcommand"),
+        }
+
+        let multi_get =
+            Cli::try_parse_from(["mdfm", "-l", "get", "-k", "title", "-k", "tags", "docs/"])
+                .unwrap();
+        assert!(multi_get.files_only);
+        match multi_get.command {
+            Commands::Get { keys, args } => {
+                assert_eq!(keys, vec!["title", "tags"]);
+                assert_eq!(args, vec!["docs/"]);
             }
             _ => panic!("expected get subcommand"),
         }

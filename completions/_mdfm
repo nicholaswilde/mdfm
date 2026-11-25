@@ -16,11 +16,13 @@ _mdfm() {
     local context curcontext="$curcontext" state line
     _arguments "${_arguments_options[@]}" : \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
-'--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
+'--output=[Output presentation format (table, json, plain, or files)]:OUTPUT:(table json plain files)' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''not has_frontmatter'\'', '\''frontmatter_format == "toml"'\'', '\''\`prep time\` != null'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
+'-l[Print only matching file paths, one per line (shorthand for --output files)]' \
+'--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '-V[Print version]' \
@@ -36,27 +38,32 @@ _mdfm() {
         case $line[1] in
             (get)
 _arguments "${_arguments_options[@]}" : \
+'*-k+[Frontmatter key(s) to query (repeatable or comma-separated; e.g. -k title -k tags)]:KEY:_default' \
+'*--key=[Frontmatter key(s) to query (repeatable or comma-separated; e.g. -k title -k tags)]:KEY:_default' \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
-'--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
+'--output=[Output presentation format (table, json, plain, or files)]:OUTPUT:(table json plain files)' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''not has_frontmatter'\'', '\''frontmatter_format == "toml"'\'', '\''\`prep time\` != null'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
+'-l[Print only matching file paths, one per line (shorthand for --output files)]' \
+'--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
 '-h[Print help]' \
 '--help[Print help]' \
-':key -- Dot-separated frontmatter key path (e.g. title, author.name):_default' \
-'*::paths -- Files or directories to search (defaults to current directory '\''.'\''):_files' \
+'*::args -- Key selector (e.g. title, author.name, title,tags, or '\''.'\'') followed by optional file or directory paths (defaults to '\''.'\''):_default' \
 && ret=0
 ;;
 (set)
 _arguments "${_arguments_options[@]}" : \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
-'--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
+'--output=[Output presentation format (table, json, plain, or files)]:OUTPUT:(table json plain files)' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''not has_frontmatter'\'', '\''frontmatter_format == "toml"'\'', '\''\`prep time\` != null'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
 '--dry-run[Preview changes without writing files to disk]' \
+'-l[Print only matching file paths, one per line (shorthand for --output files)]' \
+'--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '*::args -- KEY=VALUE, KEY+=VALUE, or KEY-=VALUE mutations followed by optional file or directory paths (defaults to '\''.'\''):_default' \
@@ -65,12 +72,14 @@ _arguments "${_arguments_options[@]}" : \
 (del)
 _arguments "${_arguments_options[@]}" : \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
-'--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
+'--output=[Output presentation format (table, json, plain, or files)]:OUTPUT:(table json plain files)' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''not has_frontmatter'\'', '\''frontmatter_format == "toml"'\'', '\''\`prep time\` != null'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
 '--dry-run[Preview deletions without writing files to disk]' \
+'-l[Print only matching file paths, one per line (shorthand for --output files)]' \
+'--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '*::args -- Frontmatter key paths to delete followed by optional file or directory paths (defaults to '\''.'\''):_default' \
@@ -80,14 +89,16 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--schema=[Path to JSON Schema file]:SCHEMA:_files' \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
-'--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
+'--output=[Output presentation format (table, json, plain, or files)]:OUTPUT:(table json plain files)' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''not has_frontmatter'\'', '\''frontmatter_format == "toml"'\'', '\''\`prep time\` != null'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
 '-q[Show only validation failures and a compact summary line]' \
 '--errors-only[Show only validation failures and a compact summary line]' \
 '--quiet[Show only validation failures and a compact summary line]' \
+'-l[Print only matching file paths, one per line (shorthand for --output files)]' \
+'--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
 '-h[Print help]' \
 '--help[Print help]' \
 '*::paths -- Files or directories to validate (defaults to current directory '\''.'\''):_files' \
@@ -96,11 +107,13 @@ _arguments "${_arguments_options[@]}" : \
 (completions)
 _arguments "${_arguments_options[@]}" : \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
-'--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
+'--output=[Output presentation format (table, json, plain, or files)]:OUTPUT:(table json plain files)' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''not has_frontmatter'\'', '\''frontmatter_format == "toml"'\'', '\''\`prep time\` != null'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
+'-l[Print only matching file paths, one per line (shorthand for --output files)]' \
+'--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ':shell -- Target shell:(bash elvish fish powershell zsh)' \
@@ -109,11 +122,13 @@ _arguments "${_arguments_options[@]}" : \
 (man)
 _arguments "${_arguments_options[@]}" : \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
-'--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
+'--output=[Output presentation format (table, json, plain, or files)]:OUTPUT:(table json plain files)' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''not has_frontmatter'\'', '\''frontmatter_format == "toml"'\'', '\''\`prep time\` != null'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
+'-l[Print only matching file paths, one per line (shorthand for --output files)]' \
+'--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -122,14 +137,16 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 '--version=[Target a specific release version or tag (e.g. 0.1.0 or v0.1.0)]:VERSION:_default' \
 '--format=[Frontmatter format used when creating new frontmatter (yaml or toml)]:FORMAT:(yaml toml)' \
-'--output=[Output presentation format (table, json, or plain)]:OUTPUT:(table json plain)' \
-'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''author.name == "Nick"'\'', '\''\`prep time\` != null'\'', '\''meta\["prep time"\] == "5m"'\'')]:EXPR:_default' \
+'--output=[Output presentation format (table, json, plain, or files)]:OUTPUT:(table json plain files)' \
+'--where=[Optional filter expression (e.g. '\''draft == true'\'', '\''not has_frontmatter'\'', '\''frontmatter_format == "toml"'\'', '\''\`prep time\` != null'\'')]:EXPR:_default' \
 '-C+[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '--config=[Path to explicit configuration file override (TOML, YAML, or JSON)]:CONFIG:_files' \
 '*--ext=[File extensions to include when walking directories (repeatable or comma-separated; defaults to md,markdown)]:EXT:_default' \
 '--check[Check for available updates without installing]' \
 '-y[Skip confirmation prompt before installing]' \
 '--yes[Skip confirmation prompt before installing]' \
+'-l[Print only matching file paths, one per line (shorthand for --output files)]' \
+'--files-only[Print only matching file paths, one per line (shorthand for --output files)]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -190,7 +207,7 @@ esac
 (( $+functions[_mdfm_commands] )) ||
 _mdfm_commands() {
     local commands; commands=(
-'get:Query a frontmatter key (supports dot paths like author.name) across Markdown files' \
+'get:Query one or more frontmatter keys (dot paths, comma-separated, -k/--key, or '\''.'\'' for full frontmatter)' \
 'set:Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)' \
 'del:Delete one or more keys from frontmatter' \
 'check:Validate frontmatter against a JSON Schema' \
@@ -224,7 +241,7 @@ _mdfm__subcmd__get_commands() {
 (( $+functions[_mdfm__subcmd__help_commands] )) ||
 _mdfm__subcmd__help_commands() {
     local commands; commands=(
-'get:Query a frontmatter key (supports dot paths like author.name) across Markdown files' \
+'get:Query one or more frontmatter keys (dot paths, comma-separated, -k/--key, or '\''.'\'' for full frontmatter)' \
 'set:Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)' \
 'del:Delete one or more keys from frontmatter' \
 'check:Validate frontmatter against a JSON Schema' \

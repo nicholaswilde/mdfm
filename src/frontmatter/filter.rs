@@ -1,3 +1,4 @@
+use crate::frontmatter::Format;
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
@@ -64,6 +65,22 @@ pub enum CompareOp {
     Contains,
 }
 
+/// Document-level metadata fields queryable in `--where` expressions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MetaField {
+    HasFrontmatter,
+    FrontmatterFormat,
+}
+
+/// Document context passed to `FilterExpr::matches_doc`.
+#[derive(Debug, Clone, Copy)]
+pub struct FilterContext<'a> {
+    /// Parsed frontmatter JSON object (`None` for files without frontmatter).
+    pub frontmatter: Option<&'a JsonValue>,
+    /// Detected frontmatter format (`None` for files without frontmatter).
+    pub format: Option<Format>,
+}
+
 /// Parsed AST for `--where` filter expressions.
 #[derive(Debug, Clone, PartialEq)]
 pub enum FilterExpr {
@@ -76,10 +93,17 @@ pub enum FilterExpr {
         value: JsonValue,
     },
     Truthy(Vec<String>),
+    MetaCompare {
+        field: MetaField,
+        op: CompareOp,
+        value: JsonValue,
+    },
+    MetaTruthy(MetaField),
 }
 
 impl FilterExpr {
     /// Parse a filter expression such as `draft == true`, `author.name == "Nick"`,
+    /// `not has_frontmatter`, `frontmatter_format == "toml"`,
     /// `` `prep time` != null ``, `meta["prep time"] == "5 minutes"`,
     /// or `tags contains "rust" and draft == false`.
     pub fn parse(input: &str) -> Result<Self, FilterError> {
@@ -98,18 +122,65 @@ impl FilterExpr {
         Ok(expr)
     }
 
-    /// Evaluate the filter expression against a frontmatter JSON object.
-    pub fn matches(&self, root: &JsonValue) -> bool {
+    /// Return `true` if the expression references document-level frontmatter metadata
+    /// (`has_frontmatter` or `frontmatter_format`).
+    pub fn references_document_meta(&self) -> bool {
         match self {
-            Self::And(lhs, rhs) => lhs.matches(root) && rhs.matches(root),
-            Self::Or(lhs, rhs) => lhs.matches(root) || rhs.matches(root),
-            Self::Not(inner) => !inner.matches(root),
-            Self::Truthy(path) => lookup_path(root, path).is_some_and(is_truthy),
+            Self::And(lhs, rhs) | Self::Or(lhs, rhs) => {
+                lhs.references_document_meta() || rhs.references_document_meta()
+            }
+            Self::Not(inner) => inner.references_document_meta(),
+            Self::MetaCompare { .. } | Self::MetaTruthy(_) => true,
+            Self::Compare { .. } | Self::Truthy(_) => false,
+        }
+    }
+
+    /// Evaluate the filter expression against a parsed frontmatter JSON object.
+    pub fn matches(&self, root: &JsonValue) -> bool {
+        self.matches_doc(FilterContext {
+            frontmatter: Some(root),
+            format: None,
+        })
+    }
+
+    /// Evaluate the filter expression against a document context (supporting files without
+    /// frontmatter when the expression references `has_frontmatter` or `frontmatter_format`).
+    pub fn matches_doc(&self, ctx: FilterContext<'_>) -> bool {
+        if ctx.frontmatter.is_none() && !self.references_document_meta() {
+            return false;
+        }
+        self.eval_doc(ctx)
+    }
+
+    fn eval_doc(&self, ctx: FilterContext<'_>) -> bool {
+        match self {
+            Self::And(lhs, rhs) => lhs.eval_doc(ctx) && rhs.eval_doc(ctx),
+            Self::Or(lhs, rhs) => lhs.eval_doc(ctx) || rhs.eval_doc(ctx),
+            Self::Not(inner) => !inner.eval_doc(ctx),
+            Self::Truthy(path) => ctx
+                .frontmatter
+                .and_then(|root| lookup_path(root, path))
+                .is_some_and(is_truthy),
             Self::Compare { path, op, value } => {
-                let actual = lookup_path(root, path);
+                let actual = ctx.frontmatter.and_then(|root| lookup_path(root, path));
                 evaluate_compare(actual, *op, value)
             }
+            Self::MetaTruthy(field) => is_truthy(&meta_value(*field, ctx)),
+            Self::MetaCompare { field, op, value } => {
+                let actual = meta_value(*field, ctx);
+                evaluate_compare(Some(&actual), *op, value)
+            }
         }
+    }
+}
+
+fn meta_value(field: MetaField, ctx: FilterContext<'_>) -> JsonValue {
+    match field {
+        MetaField::HasFrontmatter => JsonValue::Bool(ctx.frontmatter.is_some()),
+        MetaField::FrontmatterFormat => match ctx.format {
+            Some(fmt) => JsonValue::String(fmt.to_string()),
+            None => JsonValue::Null,
+        },
     }
 }
 
@@ -449,8 +520,24 @@ impl Parser {
             | TokenKind::Str(_)
             | TokenKind::Backtick(_)
             | TokenKind::LBracket => {
-                let path = self.parse_path(tok)?;
-                let op = match self.peek().map(|t| &t.kind) {
+                let meta_field = if !matches!(
+                    self.peek().map(|t| &t.kind),
+                    Some(TokenKind::Dot | TokenKind::LBracket)
+                ) {
+                    match &tok.kind {
+                        TokenKind::Ident(s) if s == "has_frontmatter" => {
+                            Some(MetaField::HasFrontmatter)
+                        }
+                        TokenKind::Ident(s) if s == "frontmatter_format" => {
+                            Some(MetaField::FrontmatterFormat)
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+
+                let op_for = |parser: &Parser| match parser.peek().map(|t| &t.kind) {
                     Some(TokenKind::Eq) => Some(CompareOp::Eq),
                     Some(TokenKind::Ne) => Some(CompareOp::Ne),
                     Some(TokenKind::Gt) => Some(CompareOp::Gt),
@@ -461,12 +548,23 @@ impl Parser {
                     _ => None,
                 };
 
-                if let Some(op) = op {
-                    self.next();
-                    let value = self.parse_literal()?;
-                    Ok(FilterExpr::Compare { path, op, value })
+                if let Some(field) = meta_field {
+                    if let Some(op) = op_for(self) {
+                        self.next();
+                        let value = self.parse_literal()?;
+                        Ok(FilterExpr::MetaCompare { field, op, value })
+                    } else {
+                        Ok(FilterExpr::MetaTruthy(field))
+                    }
                 } else {
-                    Ok(FilterExpr::Truthy(path))
+                    let path = self.parse_path(tok)?;
+                    if let Some(op) = op_for(self) {
+                        self.next();
+                        let value = self.parse_literal()?;
+                        Ok(FilterExpr::Compare { path, op, value })
+                    } else {
+                        Ok(FilterExpr::Truthy(path))
+                    }
                 }
             }
             other => Err(FilterError::UnexpectedToken {
@@ -959,5 +1057,76 @@ mod tests {
         assert!(FilterExpr::parse(r#""prep time" "cook time""#).is_err());
         assert!(FilterExpr::parse("version == v1.").is_err());
         assert!(FilterExpr::parse("version == v1. and draft").is_err());
+    }
+
+    #[test]
+    fn filter_has_frontmatter_and_frontmatter_format() {
+        let yaml_doc = json!({ "draft": true, "has_frontmatter": "literal" });
+        let empty_doc = json!({});
+
+        let body_only = FilterContext {
+            frontmatter: None,
+            format: None,
+        };
+        let empty_yaml = FilterContext {
+            frontmatter: Some(&empty_doc),
+            format: Some(Format::Yaml),
+        };
+        let yaml_ctx = FilterContext {
+            frontmatter: Some(&yaml_doc),
+            format: Some(Format::Yaml),
+        };
+        let toml_ctx = FilterContext {
+            frontmatter: Some(&empty_doc),
+            format: Some(Format::Toml),
+        };
+
+        // Bare and negated `has_frontmatter`.
+        let has_fm = FilterExpr::parse("has_frontmatter").unwrap();
+        assert!(!has_fm.matches_doc(body_only));
+        assert!(has_fm.matches_doc(empty_yaml));
+        assert!(has_fm.matches_doc(yaml_ctx));
+
+        let not_has_fm = FilterExpr::parse("not has_frontmatter").unwrap();
+        assert!(not_has_fm.matches_doc(body_only));
+        assert!(!not_has_fm.matches_doc(empty_yaml));
+
+        let eq_false = FilterExpr::parse("has_frontmatter == false").unwrap();
+        assert!(eq_false.matches_doc(body_only));
+        assert!(!eq_false.matches_doc(empty_yaml));
+
+        // `frontmatter_format` comparisons.
+        let is_yaml = FilterExpr::parse(r#"frontmatter_format == "yaml""#).unwrap();
+        assert!(!is_yaml.matches_doc(body_only));
+        assert!(is_yaml.matches_doc(empty_yaml));
+        assert!(!is_yaml.matches_doc(toml_ctx));
+
+        let is_toml = FilterExpr::parse(r#"frontmatter_format == "toml""#).unwrap();
+        assert!(is_toml.matches_doc(toml_ctx));
+        assert!(!is_toml.matches_doc(yaml_ctx));
+
+        let fmt_null = FilterExpr::parse("frontmatter_format == null").unwrap();
+        assert!(fmt_null.matches_doc(body_only));
+        assert!(!fmt_null.matches_doc(empty_yaml));
+
+        // Combined with normal key predicates.
+        let combined = FilterExpr::parse("not has_frontmatter or draft == true").unwrap();
+        assert!(combined.matches_doc(body_only));
+        assert!(!combined.matches_doc(empty_yaml));
+        assert!(combined.matches_doc(yaml_ctx));
+
+        // Backward compatibility: non-meta predicates still skip body-only files.
+        assert!(!FilterExpr::parse("not draft")
+            .unwrap()
+            .matches_doc(body_only));
+        assert!(!FilterExpr::parse("draft != true")
+            .unwrap()
+            .matches_doc(body_only));
+
+        // Quoted `"has_frontmatter"` queries literal frontmatter key, not metadata.
+        let quoted = FilterExpr::parse(r#""has_frontmatter" == "literal""#).unwrap();
+        assert!(!quoted.references_document_meta());
+        assert!(quoted.matches_doc(yaml_ctx));
+        assert!(!quoted.matches_doc(body_only));
     }
 }

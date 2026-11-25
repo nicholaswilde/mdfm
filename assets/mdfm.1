@@ -4,7 +4,7 @@
 .SH NAME
 mdfm \- jq for Markdown frontmatter: query, mutate, delete, and validate YAML and TOML frontmatter
 .SH SYNOPSIS
-\fBmdfm\fR [\fB\-\-format\fR] [\fB\-\-output\fR] [\fB\-\-where\fR] [\fB\-C\fR|\fB\-\-config\fR] [\fB\-\-ext\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
+\fBmdfm\fR [\fB\-\-format\fR] [\fB\-\-output\fR] [\fB\-l\fR|\fB\-\-files\-only\fR] [\fB\-\-where\fR] [\fB\-C\fR|\fB\-\-config\fR] [\fB\-\-ext\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
 .SH DESCRIPTION
 jq for Markdown frontmatter: query, mutate, delete, and validate YAML and TOML frontmatter
 .SH OPTIONS
@@ -23,7 +23,7 @@ toml
 .RE
 .TP
 \fB\-\-output\fR \fI<OUTPUT>\fR
-Output presentation format (table, json, or plain)
+Output presentation format (table, json, plain, or files)
 .br
 
 .br
@@ -35,10 +35,15 @@ table
 json
 .IP \(bu 2
 plain
+.IP \(bu 2
+files
 .RE
 .TP
+\fB\-l\fR, \fB\-\-files\-only\fR
+Print only matching file paths, one per line (shorthand for \-\-output files)
+.TP
 \fB\-\-where\fR \fI<EXPR>\fR
-Optional filter expression (e.g. \*(Aqdraft == true\*(Aq, \*(Aqauthor.name == "Nick"\*(Aq, \*(Aq`prep time` != null\*(Aq, \*(Aqmeta["prep time"] == "5m"\*(Aq)
+Optional filter expression (e.g. \*(Aqdraft == true\*(Aq, \*(Aqnot has_frontmatter\*(Aq, \*(Aqfrontmatter_format == "toml"\*(Aq, \*(Aq`prep time` != null\*(Aq)
 .TP
 \fB\-C\fR, \fB\-\-config\fR \fI<CONFIG>\fR
 Path to explicit configuration file override (TOML, YAML, or JSON)
@@ -54,7 +59,7 @@ Print version
 .SH SUBCOMMANDS
 .TP
 mdfm\-get(1)
-Query a frontmatter key (supports dot paths like author.name) across Markdown files
+Query one or more frontmatter keys (dot paths, comma\-separated, \-k/\-\-key, or \*(Aq.\*(Aq for full frontmatter)
 .TP
 mdfm\-set(1)
 Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)

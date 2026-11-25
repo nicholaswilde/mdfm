@@ -71,7 +71,7 @@ _mdfm() {
 
     case "${cmd}" in
         mdfm)
-            opts="-C -h -V --format --output --where --config --ext --help --version get set del check completions man update help"
+            opts="-l -C -h -V --format --output --files-only --where --config --ext --help --version get set del check completions man update help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -82,7 +82,7 @@ _mdfm() {
                     return 0
                     ;;
                 --output)
-                    COMPREPLY=($(compgen -W "table json plain" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "table json plain files" -- "${cur}"))
                     return 0
                     ;;
                 --where)
@@ -109,7 +109,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__check)
-            opts="-q -C -h --schema --quiet --errors-only --format --output --where --config --ext --help"
+            opts="-q -l -C -h --schema --quiet --errors-only --format --output --files-only --where --config --ext --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -124,7 +124,7 @@ _mdfm() {
                     return 0
                     ;;
                 --output)
-                    COMPREPLY=($(compgen -W "table json plain" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "table json plain files" -- "${cur}"))
                     return 0
                     ;;
                 --where)
@@ -151,7 +151,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__completions)
-            opts="-C -h --format --output --where --config --ext --help bash elvish fish powershell zsh"
+            opts="-l -C -h --format --output --files-only --where --config --ext --help bash elvish fish powershell zsh"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -162,7 +162,7 @@ _mdfm() {
                     return 0
                     ;;
                 --output)
-                    COMPREPLY=($(compgen -W "table json plain" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "table json plain files" -- "${cur}"))
                     return 0
                     ;;
                 --where)
@@ -189,7 +189,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__del)
-            opts="-C -h --dry-run --format --output --where --config --ext --help"
+            opts="-l -C -h --dry-run --format --output --files-only --where --config --ext --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -200,7 +200,7 @@ _mdfm() {
                     return 0
                     ;;
                 --output)
-                    COMPREPLY=($(compgen -W "table json plain" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "table json plain files" -- "${cur}"))
                     return 0
                     ;;
                 --where)
@@ -227,18 +227,26 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__get)
-            opts="-C -h --format --output --where --config --ext --help"
+            opts="-k -l -C -h --key --format --output --files-only --where --config --ext --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --format)
                     COMPREPLY=($(compgen -W "yaml toml" -- "${cur}"))
                     return 0
                     ;;
                 --output)
-                    COMPREPLY=($(compgen -W "table json plain" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "table json plain files" -- "${cur}"))
                     return 0
                     ;;
                 --where)
@@ -391,7 +399,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__man)
-            opts="-C -h --format --output --where --config --ext --help"
+            opts="-l -C -h --format --output --files-only --where --config --ext --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -402,7 +410,7 @@ _mdfm() {
                     return 0
                     ;;
                 --output)
-                    COMPREPLY=($(compgen -W "table json plain" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "table json plain files" -- "${cur}"))
                     return 0
                     ;;
                 --where)
@@ -429,7 +437,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__set)
-            opts="-C -h --dry-run --format --output --where --config --ext --help"
+            opts="-l -C -h --dry-run --format --output --files-only --where --config --ext --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -440,7 +448,7 @@ _mdfm() {
                     return 0
                     ;;
                 --output)
-                    COMPREPLY=($(compgen -W "table json plain" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "table json plain files" -- "${cur}"))
                     return 0
                     ;;
                 --where)
@@ -467,7 +475,7 @@ _mdfm() {
             return 0
             ;;
         mdfm__subcmd__update)
-            opts="-y -C -h --check --yes --version --format --output --where --config --ext --help"
+            opts="-y -l -C -h --check --yes --version --format --output --files-only --where --config --ext --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -482,7 +490,7 @@ _mdfm() {
                     return 0
                     ;;
                 --output)
-                    COMPREPLY=($(compgen -W "table json plain" -- "${cur}"))
+                    COMPREPLY=($(compgen -W "table json plain files" -- "${cur}"))
                     return 0
                     ;;
                 --where)

@@ -215,7 +215,8 @@ fn parse_output_env(raw: &str) -> Result<OutputFormat> {
         "table" => Ok(OutputFormat::Table),
         "json" => Ok(OutputFormat::Json),
         "plain" => Ok(OutputFormat::Plain),
-        other => anyhow::bail!("Invalid output format '{other}' from MDFM_OUTPUT. Expected 'table', 'json', or 'plain'"),
+        "files" => Ok(OutputFormat::Files),
+        other => anyhow::bail!("Invalid output format '{other}' from MDFM_OUTPUT. Expected 'table', 'json', 'plain', or 'files'"),
     }
 }
 
@@ -525,6 +526,7 @@ errors_only = true
         assert_eq!(parse_output_env("table").unwrap(), OutputFormat::Table);
         assert_eq!(parse_output_env("JSON").unwrap(), OutputFormat::Json);
         assert_eq!(parse_output_env("plain").unwrap(), OutputFormat::Plain);
+        assert_eq!(parse_output_env("files").unwrap(), OutputFormat::Files);
         assert!(parse_output_env("csv").is_err());
 
         // resolve_schema_relative_to_config: absolute, existing relative, missing relative.

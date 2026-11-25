@@ -9,7 +9,7 @@ use crate::cli::OutputFormat;
 use crate::commands::{build_table, collect_markdown_files, has_matching_extension};
 use crate::config::{default_extensions, ResolvedConfig};
 use crate::frontmatter;
-use crate::frontmatter::filter::FilterExpr;
+use crate::frontmatter::filter::{FilterContext, FilterExpr};
 
 #[derive(Debug, Serialize)]
 struct DelEntry {
@@ -93,7 +93,11 @@ pub fn execute(
 
         if let Some(expr) = filter {
             let json_obj = fm.to_json_value()?;
-            if !expr.matches(&json_obj) {
+            let ctx = FilterContext {
+                frontmatter: Some(&json_obj),
+                format: Some(fm.format()),
+            };
+            if !expr.matches_doc(ctx) {
                 continue;
             }
         }
@@ -124,6 +128,11 @@ pub fn execute(
     }
 
     match config.output {
+        OutputFormat::Files => {
+            for r in &results {
+                writeln!(out, "{}", r.file)?;
+            }
+        }
         OutputFormat::Json => {
             writeln!(out, "{}", serde_json::to_string_pretty(&results)?)?;
         }

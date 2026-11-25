@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use crate::cli::OutputFormat;
 use crate::commands::{build_table, collect_markdown_files};
 use crate::config::ResolvedConfig;
-use crate::frontmatter::filter::FilterExpr;
+use crate::frontmatter::filter::{FilterContext, FilterExpr};
 use crate::frontmatter::{self, Format, FrontmatterData};
 
 #[derive(Debug, Serialize)]
@@ -146,10 +146,11 @@ pub fn execute(
             .transpose()?;
 
         if let Some(expr) = filter {
-            let Some(ref json_obj) = before_json else {
-                continue;
+            let ctx = FilterContext {
+                frontmatter: before_json.as_ref(),
+                format: existing_fm.as_ref().map(FrontmatterData::format),
             };
-            if !expr.matches(json_obj) {
+            if !expr.matches_doc(ctx) {
                 continue;
             }
         }
@@ -220,6 +221,11 @@ pub fn execute(
     }
 
     match config.output {
+        OutputFormat::Files => {
+            for r in &results {
+                writeln!(out, "{}", r.file)?;
+            }
+        }
         OutputFormat::Json => {
             writeln!(out, "{}", serde_json::to_string_pretty(&results)?)?;
         }

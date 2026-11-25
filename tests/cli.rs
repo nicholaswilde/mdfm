@@ -1147,3 +1147,209 @@ fn cli_check_errors_only_quiet_and_config() {
         .success()
         .stdout(predicate::str::diff("2 ok, 0 failed\n"));
 }
+
+#[test]
+fn cli_get_multi_key_and_root_dump() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("a.md");
+    let b = tmp.path().join("b.md");
+    let c = tmp.path().join("c_plain.md");
+
+    fs::write(
+        &a,
+        "---\ntitle: Alpha\ntags:\n  - rust\n  - cli\nauthor:\n  name: Nick\n---\nBody\n",
+    )
+    .unwrap();
+    fs::write(&b, "+++\ntitle = \"Beta\"\n+++\nBody\n").unwrap();
+    fs::write(&c, "# No Frontmatter\n").unwrap();
+
+    // Comma-separated multi-key query in JSON mode (missing keys -> null).
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args(["--output", "json", "get", "title,tags,author.name"])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let entries: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["values"]["title"], "Alpha");
+    assert_eq!(
+        entries[0]["values"]["tags"],
+        serde_json::json!(["rust", "cli"])
+    );
+    assert_eq!(entries[0]["values"]["author.name"], "Nick");
+    assert_eq!(entries[1]["values"]["title"], "Beta");
+    assert_eq!(entries[1]["values"]["tags"], JsonValue::Null);
+    assert_eq!(entries[1]["values"]["author.name"], JsonValue::Null);
+
+    // Repeatable -k / --key in table mode renders multi-column table.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["get", "-k", "title", "-k", "tags"])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("title"))
+        .stdout(predicate::str::contains("tags"))
+        .stdout(predicate::str::contains("Alpha"))
+        .stdout(predicate::str::contains("Beta"));
+
+    // Multi-key plain output on directory is tab-delimited `<file>\t<v1>\t<v2>`.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["--output", "plain", "get", "title,author.name"])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\tAlpha\tNick\n"))
+        .stdout(predicate::str::contains("\tBeta\t\n"));
+
+    // Root selector `.` dumps complete frontmatter JSON per file.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args(["--output", "json", "get", "."])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let entries: Vec<JsonValue> = serde_json::from_slice(&out).unwrap();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["key"], ".");
+    assert_eq!(entries[0]["value"]["title"], "Alpha");
+    assert_eq!(entries[0]["value"]["author"]["name"], "Nick");
+    assert_eq!(entries[1]["value"]["title"], "Beta");
+
+    // Single explicit file with `.` in plain mode prints raw JSON object (jq-pipeable).
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args(["--output", "plain", "get", "."])
+        .arg(&b)
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let obj: JsonValue = serde_json::from_slice(&out).unwrap();
+    assert_eq!(obj["title"], "Beta");
+
+    // Mixing `.` with another key errors cleanly.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["get", ".,title"])
+        .arg(tmp.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Cannot combine root selector"));
+}
+
+#[test]
+fn cli_files_only_and_has_frontmatter_filter() {
+    let tmp = tempfile::tempdir().unwrap();
+    let yaml_file = tmp.path().join("a_yaml.md");
+    let toml_file = tmp.path().join("b_toml.md");
+    let empty_fm_file = tmp.path().join("c_empty_fm.md");
+    let body_only_file = tmp.path().join("d_body_only.md");
+    let schema = copy_fixture("schema.json", tmp.path());
+
+    fs::write(&yaml_file, "---\ntitle: YAML\ndraft: false\n---\nBody\n").unwrap();
+    fs::write(
+        &toml_file,
+        "+++\ntitle = \"TOML\"\ndraft = true\n+++\nBody\n",
+    )
+    .unwrap();
+    fs::write(&empty_fm_file, "---\n---\nEmpty block\n").unwrap();
+    fs::write(&body_only_file, "# Just Markdown\n").unwrap();
+
+    // `-l` with `not has_frontmatter` finds ONLY body-only file (distinguishes from empty block).
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args(["--where", "not has_frontmatter", "-l", "get", "."])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines: Vec<&str> = std::str::from_utf8(&out).unwrap().lines().collect();
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].ends_with("d_body_only.md"));
+
+    // `--output files` with `frontmatter_format == "toml"` lists only TOML file.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args([
+            "--where",
+            r#"frontmatter_format == "toml""#,
+            "--output",
+            "files",
+            "get",
+            "title",
+        ])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines: Vec<&str> = std::str::from_utf8(&out).unwrap().lines().collect();
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].ends_with("b_toml.md"));
+
+    // `set` with `--where 'has_frontmatter == false'` and `-l` creates frontmatter ONLY on body-only file.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args([
+            "--where",
+            "has_frontmatter == false",
+            "-l",
+            "set",
+            "comments=true",
+        ])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines: Vec<&str> = std::str::from_utf8(&out).unwrap().lines().collect();
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].ends_with("d_body_only.md"));
+    assert!(fs::read_to_string(&body_only_file)
+        .unwrap()
+        .contains("comments: true"));
+    assert!(!fs::read_to_string(&empty_fm_file)
+        .unwrap()
+        .contains("comments"));
+
+    // `del` with `--files-only` prints matching file paths one per line.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args(["--files-only", "--where", "draft == true", "del", "draft"])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let lines: Vec<&str> = std::str::from_utf8(&out).unwrap().lines().collect();
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].ends_with("b_toml.md"));
+
+    // `check -q -l` prints ONLY failing file paths (no summary line) and exits non-zero.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    let out = cmd
+        .args(["-l", "check", "-q", "--schema"])
+        .arg(&schema)
+        .arg(&yaml_file)
+        .arg(&empty_fm_file)
+        .assert()
+        .failure()
+        .get_output()
+        .stdout
+        .clone();
+    let lines: Vec<&str> = std::str::from_utf8(&out).unwrap().lines().collect();
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].ends_with("c_empty_fm.md"));
+}

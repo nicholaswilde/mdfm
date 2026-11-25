@@ -23,7 +23,8 @@ Global flags may be placed before or after the subcommand:
 | Flag | Environment Variable | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `--format <yaml\|toml>` | `MDFM_FORMAT` | `yaml` | Frontmatter format used when creating new frontmatter on files without any |
-| `--output <table\|json\|plain>` | `MDFM_OUTPUT` | `table` | Output presentation format |
+| `--output <table\|json\|plain\|files>` | `MDFM_OUTPUT` | `table` | Output presentation format |
+| `-l`, `--files-only` | N/A | `false` | Print only matching file paths, one per line (shorthand for `--output files`) |
 | `--where <EXPR>` | N/A | None | Filter files by evaluating a frontmatter predicate expression |
 | `-C`, `--config <PATH>` | `MDFM_CONFIG` | Auto-discover | Explicit configuration file path (`.toml`, `.yaml`, `.yml`, or `.json`) |
 | `--ext <EXT>` | N/A | `md,markdown` | File extensions to discover during directory walks (repeatable or comma-separated) |
@@ -32,23 +33,29 @@ Global flags may be placed before or after the subcommand:
 
 ## :mag: Querying Keys (`get`)
 
-Query top-level or nested keys across a single file, multiple paths, or a directory (defaults to `.` when no paths are passed):
+Query one or more top-level/nested keys — or dump the entire frontmatter object with `.` — across a single file, multiple paths, or a directory (defaults to `.` when no paths are passed):
 
 ```bash
-# Query a top-level key across a directory
+# Query a single top-level or nested key across a directory
 mdfm get title docs/
-
-# Query a nested key using dot notation
 mdfm get author.name posts/
+
+# Query multiple keys in a single pass (comma-separated or repeatable -k/--key)
+mdfm get title,tags,author.name docs/
+mdfm get -k title -k tags docs/
+
+# Dump the complete frontmatter object per file with '.'
+mdfm --output json get . posts/ | jq '.[].value'
+mdfm --output plain get . posts/hello.md | jq .title
 
 # Query a single file in plain format (emits only the value)
 mdfm --output plain get title posts/hello.md
 
-# Emit structured JSON for piping into jq
-mdfm --output json get tags posts/ | jq '.[].value'
+# Print only matching file paths (pipeable to xargs / rumdl)
+mdfm --where 'draft == true' -l get title posts/
 ```
 
-Files without frontmatter or without the requested key are silently skipped.
+Files without frontmatter are skipped (unless matching a `has_frontmatter` / `frontmatter_format` `--where` predicate with `.`). In multi-key queries, files missing all requested keys are skipped; missing individual fields render as `null` in `json` and blank in `table` / `plain`.
 
 ## :pencil2: Updating & Inserting Keys (`set`)
 
@@ -130,6 +137,7 @@ The global `--where` flag filters Markdown files before `get`, `set`, `del`, or 
 | Logical | `and`/`&&`, `or`/`||`, `not`/`!` | `draft == false && tags contains "rust"` |
 | Grouping | `( ... )` | `(draft == false or weight == 10) and not archived` |
 | Truthiness | Bare key path | `draft`, `not archived`, `` `prep time` `` |
+| Document metadata | `has_frontmatter`, `frontmatter_format` | `not has_frontmatter`, `has_frontmatter == false`, `frontmatter_format == "toml"` |
 | Keys with spaces / punctuation | `"..."`, `'...'`, `` `...` ``, `["..."]`, `[N]` | `"prep time" != null`, `` `cook time` ``, `meta["prep time"] == "5 minutes"`, `tags[0] == "rust"` |
 
 ### Keys with Spaces or Special Characters
@@ -158,12 +166,21 @@ mdfm --where '`cook time` == "20 minutes" and meta["prep time"] == "5 minutes"' 
 # Bulk publish drafts with weight >= 10
 mdfm --where 'draft == true && weight >= 10' set draft=false posts/ --dry-run
 
+# Find files lacking frontmatter completely (distinguished from empty --- blocks)
+mdfm --where 'not has_frontmatter' -l get . docs/
+
+# Add frontmatter only to files that have none
+mdfm --where 'has_frontmatter == false' set comments=true docs/
+
+# List only TOML frontmatter files
+mdfm --where 'frontmatter_format == "toml"' -l get . posts/
+
 # Validate only non-draft posts against a strict publishing schema
 mdfm --where 'not draft' check --schema publish-schema.json posts/
 ```
 
 !!! tip
-    Bare key paths evaluate as falsy when missing, `null`, `false`, `0`, `""`, `[]`, or `{}`. Inequality (`!=`) evaluates to `true` when the referenced key is absent.
+    Bare key paths evaluate as falsy when missing, `null`, `false`, `0`, `""`, `[]`, or `{}`. Inequality (`!=`) evaluates to `true` when the referenced key is absent. Use `has_frontmatter` or `frontmatter_format` (`"yaml"`, `"toml"`, or `null`) to target files without frontmatter; quote `"has_frontmatter"` if querying a literal frontmatter key with that name.
 
 ## :white_check_mark: Schema Validation (`check`)
 
@@ -217,7 +234,7 @@ Files without frontmatter are validated as an empty JSON object (`{}`) unless fi
 
 ## :bar_chart: Output Formats
 
-All subcommands support `--output table` (default), `--output json`, and `--output plain`:
+All subcommands support `--output table` (default), `--output json`, `--output plain`, and `--output files` (`-l` / `--files-only`):
 
 === "Table"
 
@@ -257,6 +274,13 @@ All subcommands support `--output table` (default), `--output json`, and `--outp
 
     # Single explicit file with `get`: <value> only
     TOML Post
+    ```
+
+=== "Files (`-l` / `--files-only`)"
+
+    ```text
+    posts/toml_post.md
+    posts/yaml_post.md
     ```
 
 ## :file_folder: File Discovery & Ignore Rules

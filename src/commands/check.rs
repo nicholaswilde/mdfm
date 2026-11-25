@@ -10,7 +10,7 @@ use crate::cli::OutputFormat;
 use crate::commands::{build_table, collect_markdown_files};
 use crate::config::ResolvedConfig;
 use crate::frontmatter;
-use crate::frontmatter::filter::FilterExpr;
+use crate::frontmatter::filter::{FilterContext, FilterExpr};
 
 #[derive(Debug, Serialize)]
 struct CheckEntry {
@@ -58,9 +58,9 @@ pub fn execute(
             }
         };
 
-        let instance = match parsed {
+        let (fm_format, fm_json) = match parsed {
             Some(ref fm) => match fm.to_json_value() {
-                Ok(v) => v,
+                Ok(v) => (Some(fm.format()), Some(v)),
                 Err(err) => {
                     results.push(CheckEntry {
                         file: path.display().to_string(),
@@ -70,19 +70,20 @@ pub fn execute(
                     continue;
                 }
             },
-            None => {
-                if filter.is_some() {
-                    continue;
-                }
-                json!({})
-            }
+            None => (None, None),
         };
 
         if let Some(expr) = filter {
-            if !expr.matches(&instance) {
+            let ctx = FilterContext {
+                frontmatter: fm_json.as_ref(),
+                format: fm_format,
+            };
+            if !expr.matches_doc(ctx) {
                 continue;
             }
         }
+
+        let instance = fm_json.unwrap_or_else(|| json!({}));
 
         let errors: Vec<String> = validator
             .iter_errors(&instance)
@@ -112,6 +113,11 @@ pub fn execute(
     };
 
     match config.output {
+        OutputFormat::Files => {
+            for r in &displayed {
+                writeln!(out, "{}", r.file)?;
+            }
+        }
         OutputFormat::Json => {
             writeln!(out, "{}", serde_json::to_string_pretty(&displayed)?)?;
         }

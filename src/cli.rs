@@ -13,6 +13,7 @@ pub enum OutputFormat {
     Table,
     Json,
     Plain,
+    Files,
 }
 
 #[derive(Parser, Debug, Clone)]
@@ -28,11 +29,15 @@ pub struct Cli {
     #[arg(long, env = "MDFM_FORMAT", global = true)]
     pub format: Option<Format>,
 
-    /// Output presentation format (table, json, or plain)
+    /// Output presentation format (table, json, plain, or files)
     #[arg(long, env = "MDFM_OUTPUT", global = true)]
     pub output: Option<OutputFormat>,
 
-    /// Optional filter expression (e.g. 'draft == true', 'author.name == "Nick"', '`prep time` != null', 'meta["prep time"] == "5m"')
+    /// Print only matching file paths, one per line (shorthand for --output files)
+    #[arg(short = 'l', long = "files-only", global = true)]
+    pub files_only: bool,
+
+    /// Optional filter expression (e.g. 'draft == true', 'not has_frontmatter', 'frontmatter_format == "toml"', '`prep time` != null')
     #[arg(long = "where", value_name = "EXPR", global = true)]
     pub where_expr: Option<String>,
 
@@ -67,12 +72,14 @@ impl Cli {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
-    /// Query a frontmatter key (supports dot paths like author.name) across Markdown files
+    /// Query one or more frontmatter keys (dot paths, comma-separated, -k/--key, or '.' for full frontmatter)
     Get {
-        /// Dot-separated frontmatter key path (e.g. title, author.name)
-        key: String,
-        /// Files or directories to search (defaults to current directory '.')
-        paths: Vec<PathBuf>,
+        /// Frontmatter key(s) to query (repeatable or comma-separated; e.g. -k title -k tags)
+        #[arg(short = 'k', long = "key", value_name = "KEY", value_delimiter = ',')]
+        keys: Vec<String>,
+        /// Key selector (e.g. title, author.name, title,tags, or '.') followed by optional file or directory paths (defaults to '.')
+        #[arg(value_name = "[KEY] [PATHS...]")]
+        args: Vec<String>,
     },
     /// Update, insert, or mutate array frontmatter keys (creates frontmatter using default_format if absent)
     Set {
