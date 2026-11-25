@@ -85,3 +85,50 @@ pub fn execute(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_multi_plain_empty_table_and_parse_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.md");
+        let b = dir.path().join("b.md");
+        fs::write(&a, "---\ntitle: One\n---\nBody\n").unwrap();
+        fs::write(&b, "---\ntitle: Two\n---\nBody\n").unwrap();
+
+        // Multiple files in plain format emit `<file>\t<value>`.
+        let cfg = ResolvedConfig {
+            output: OutputFormat::Plain,
+            ..ResolvedConfig::default()
+        };
+        let mut out = Vec::new();
+        execute("title", &[dir.path().to_path_buf()], None, &cfg, &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("\tOne\n"));
+        assert!(text.contains("\tTwo\n"));
+
+        // Empty table output prints nothing.
+        let table_cfg = ResolvedConfig {
+            output: OutputFormat::Table,
+            ..ResolvedConfig::default()
+        };
+        let mut empty_out = Vec::new();
+        execute(
+            "nonexistent",
+            &[dir.path().to_path_buf()],
+            None,
+            &table_cfg,
+            &mut empty_out,
+        )
+        .unwrap();
+        assert!(empty_out.is_empty());
+
+        // Invalid frontmatter returns error.
+        let bad = dir.path().join("bad.md");
+        fs::write(&bad, "---\n[unclosed\n---\nBody\n").unwrap();
+        let mut err_out = Vec::new();
+        assert!(execute("title", &[bad], None, &cfg, &mut err_out).is_err());
+    }
+}

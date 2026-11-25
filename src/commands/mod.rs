@@ -108,3 +108,46 @@ pub(crate) fn build_table(headers: &[&str]) -> Table {
         .set_header(headers);
     table
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::fs;
+
+    #[test]
+    fn compile_filter_and_display_values() {
+        assert!(compile_filter(None).unwrap().is_none());
+        assert!(compile_filter(Some("draft == true")).unwrap().is_some());
+        assert!(compile_filter(Some("draft ==")).is_err());
+
+        assert_eq!(format_display_value(&json!("hi")), "hi");
+        assert_eq!(format_display_value(&json!(true)), "true");
+        assert_eq!(format_display_value(&json!(42)), "42");
+        assert_eq!(format_display_value(&json!(null)), "null");
+        assert_eq!(format_display_value(&json!(["a", "b"])), r#"["a","b"]"#);
+    }
+
+    #[test]
+    fn collect_markdown_files_edge_cases() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.md"), "# a\n").unwrap();
+        fs::write(dir.path().join("b.markdown"), "# b\n").unwrap();
+        fs::write(dir.path().join("skip.md"), "# skip\n").unwrap();
+        fs::write(dir.path().join("note.txt"), "text\n").unwrap();
+
+        // `!`-prefixed ignore pattern works alongside plain patterns.
+        let files =
+            collect_markdown_files(&[dir.path().to_path_buf()], &["!skip.md".to_string()]).unwrap();
+        assert_eq!(files.len(), 2);
+
+        // Nonexistent path errors.
+        assert!(collect_markdown_files(&[dir.path().join("nope.md")], &[]).is_err());
+
+        // Invalid glob pattern errors.
+        assert!(
+            collect_markdown_files(&[dir.path().to_path_buf()], &["[unclosed".to_string()])
+                .is_err()
+        );
+    }
+}

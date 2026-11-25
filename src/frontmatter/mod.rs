@@ -592,4 +592,52 @@ role = \"writer\"
         let rendered = doc.render(Some(&fm)).unwrap();
         assert!(rendered.ends_with(body));
     }
+
+    #[test]
+    fn empty_input_invalid_key_paths_and_format_switch_render() {
+        // Empty input yields body-only with LF line ending.
+        let empty = split("");
+        assert!(!empty.has_bom);
+        assert_eq!(empty.line_ending, LineEnding::Lf);
+        assert!(empty.frontmatter.is_none());
+        assert_eq!(empty.body, "");
+
+        // Display & empty/del paths for both formats.
+        assert_eq!(Format::Yaml.to_string(), "yaml");
+        assert_eq!(Format::Toml.to_string(), "toml");
+        let mut y = FrontmatterData::empty(Format::Yaml);
+        y.set("a", json!(1)).unwrap();
+        let mut t = FrontmatterData::empty(Format::Toml);
+        t.set("a", json!(1)).unwrap();
+        assert!(t.del("a").unwrap());
+        assert!(!t.del("a").unwrap());
+
+        // Invalid key paths.
+        assert!(matches!(
+            split_key_path(""),
+            Err(FrontmatterError::InvalidKeyPath(_))
+        ));
+        assert!(matches!(
+            split_key_path("a..b"),
+            Err(FrontmatterError::InvalidKeyPath(_))
+        ));
+
+        // Rendering a TOML FrontmatterData into a SplitDocument whose original block was YAML.
+        let doc = split("---\ntitle: Old\n---\nBody\n");
+        let mut new_toml = FrontmatterData::empty(Format::Toml);
+        new_toml.set("title", json!("New")).unwrap();
+        let rendered = doc.render(Some(&new_toml)).unwrap();
+        assert_eq!(rendered, "+++\ntitle = \"New\"\n+++\nBody\n");
+
+        // Rendering YAML FrontmatterData into a body-only document uses default `---` delimiter.
+        let plain = split("# Hello\n");
+        let rendered_yaml = plain.render(Some(&y)).unwrap();
+        assert_eq!(rendered_yaml, "---\na: 1\n---\n# Hello\n");
+
+        // normalize_frontmatter_lines appends EOL when serialized text lacks trailing newline.
+        assert_eq!(
+            normalize_frontmatter_lines("a = 1", LineEnding::Lf),
+            "a = 1\n"
+        );
+    }
 }

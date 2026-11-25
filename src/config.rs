@@ -324,6 +324,40 @@ pub fn resolve_configuration_from_dir(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvGuard {
+        saved: Vec<(&'static str, Option<OsString>)>,
+    }
+
+    impl EnvGuard {
+        fn new(keys: &[&'static str]) -> Self {
+            let saved = keys.iter().map(|&k| (k, std::env::var_os(k))).collect();
+            Self { saved }
+        }
+
+        fn set(&self, key: &str, val: &str) {
+            std::env::set_var(key, val);
+        }
+
+        fn remove(&self, key: &str) {
+            std::env::remove_var(key);
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for (k, v) in &self.saved {
+                match v {
+                    Some(val) => std::env::set_var(k, val),
+                    None => std::env::remove_var(k),
+                }
+            }
+        }
+    }
 
     #[test]
     fn parse_toml_config_file() {
@@ -344,7 +378,91 @@ ignore = ["drafts/**", "README.md"]
     }
 
     #[test]
+    fn parse_yaml_json_and_errors() {
+        assert_eq!(
+            ConfigFormat::from_path(Path::new("cfg.yaml")),
+            Some(ConfigFormat::Yaml)
+        );
+        assert_eq!(
+            ConfigFormat::from_path(Path::new("cfg.yml")),
+            Some(ConfigFormat::Yaml)
+        );
+        assert_eq!(
+            ConfigFormat::from_path(Path::new("cfg.json")),
+            Some(ConfigFormat::Json)
+        );
+        assert_eq!(ConfigFormat::from_path(Path::new("cfg.txt")), None);
+
+        let yaml_cfg = ConfigFile::parse(
+            "default_format: toml\noutput: plain\nschema: s.json\nignore:\n  - a/**\n",
+            ConfigFormat::Yaml,
+        )
+        .unwrap();
+        assert_eq!(yaml_cfg.default_format, Some(Format::Toml));
+        assert_eq!(yaml_cfg.output, Some(OutputFormat::Plain));
+
+        let json_cfg = ConfigFile::parse(
+            r#"{"default_format":"yaml","output":"json","schema":"s.json","ignore":["b/**"]}"#,
+            ConfigFormat::Json,
+        )
+        .unwrap();
+        assert_eq!(json_cfg.default_format, Some(Format::Yaml));
+        assert_eq!(json_cfg.output, Some(OutputFormat::Json));
+
+        let dir = tempfile::tempdir().unwrap();
+        let bad_ext = dir.path().join("config.txt");
+        fs::write(&bad_ext, "hello").unwrap();
+        assert!(ConfigFile::load_from_path(&bad_ext).is_err());
+        assert!(ConfigFile::load_from_path(&dir.path().join("missing.toml")).is_err());
+
+        // ResolvedConfig defaults and env parsers.
+        let def = ResolvedConfig::default();
+        assert_eq!(def.default_format, Format::Yaml);
+        assert_eq!(def.output, OutputFormat::Table);
+        assert!(def.schema.is_none());
+        assert!(def.ignore.is_empty());
+
+        assert_eq!(parse_format_env("YAML").unwrap(), Format::Yaml);
+        assert_eq!(parse_format_env("yml").unwrap(), Format::Yaml);
+        assert_eq!(parse_format_env("toml").unwrap(), Format::Toml);
+        assert!(parse_format_env("xml").is_err());
+
+        assert_eq!(parse_output_env("table").unwrap(), OutputFormat::Table);
+        assert_eq!(parse_output_env("JSON").unwrap(), OutputFormat::Json);
+        assert_eq!(parse_output_env("plain").unwrap(), OutputFormat::Plain);
+        assert!(parse_output_env("csv").is_err());
+
+        // resolve_schema_relative_to_config: absolute, existing relative, missing relative.
+        let abs = dir.path().join("abs.json");
+        let cfg_p = dir.path().join(".mdfm.toml");
+        assert_eq!(resolve_schema_relative_to_config(abs.clone(), &cfg_p), abs);
+        let rel_existing = dir.path().join("existing.json");
+        fs::write(&rel_existing, "{}").unwrap();
+        assert_eq!(
+            resolve_schema_relative_to_config(PathBuf::from("existing.json"), &cfg_p),
+            rel_existing
+        );
+        assert_eq!(
+            resolve_schema_relative_to_config(PathBuf::from("missing.json"), &cfg_p),
+            PathBuf::from("missing.json")
+        );
+    }
+
+    #[test]
     fn explicit_config_and_cli_precedence() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let env = EnvGuard::new(&[
+            "MDFM_CONFIG",
+            "MDFM_FORMAT",
+            "MDFM_OUTPUT",
+            "MDFM_SCHEMA",
+            "XDG_CONFIG_HOME",
+        ]);
+        env.remove("MDFM_CONFIG");
+        env.remove("MDFM_FORMAT");
+        env.remove("MDFM_OUTPUT");
+        env.remove("MDFM_SCHEMA");
+
         let dir = tempfile::tempdir().unwrap();
         let cfg_path = dir.path().join("custom.toml");
         fs::write(
@@ -373,6 +491,121 @@ ignore = ["drafts/**", "README.md"]
         assert_eq!(resolved_cli.default_format, Format::Yaml);
         assert_eq!(resolved_cli.output, OutputFormat::Json);
         assert_eq!(resolved_cli.schema, Some(PathBuf::from("override.json")));
+
+        // Error on nonexistent path or directory passed as explicit config.
+        assert!(resolve_configuration_from_dir(
+            dir.path(),
+            Some(&dir.path().join("nope.toml")),
+            None,
+            None,
+            None
+        )
+        .is_err());
+        assert!(
+            resolve_configuration_from_dir(dir.path(), Some(dir.path()), None, None, None).is_err()
+        );
+    }
+
+    #[test]
+    fn env_vars_and_global_config_resolution() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let env = EnvGuard::new(&[
+            "MDFM_CONFIG",
+            "MDFM_FORMAT",
+            "MDFM_OUTPUT",
+            "MDFM_SCHEMA",
+            "XDG_CONFIG_HOME",
+            "HOME",
+            "APPDATA",
+            "USERPROFILE",
+        ]);
+        for k in [
+            "MDFM_CONFIG",
+            "MDFM_FORMAT",
+            "MDFM_OUTPUT",
+            "MDFM_SCHEMA",
+            "XDG_CONFIG_HOME",
+            "HOME",
+            "APPDATA",
+            "USERPROFILE",
+        ] {
+            env.remove(k);
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let xdg = dir.path().join("xdg");
+        let global_dir = xdg.join("mdfm");
+        fs::create_dir_all(&global_dir).unwrap();
+        let global_schema = global_dir.join("global-schema.json");
+        fs::write(&global_schema, "{}").unwrap();
+        fs::write(
+            global_dir.join("config.yaml"),
+            "default_format: toml\noutput: plain\nschema: global-schema.json\nignore:\n  - g/**\n",
+        )
+        .unwrap();
+
+        // Global config discovery via XDG_CONFIG_HOME.
+        env.set("XDG_CONFIG_HOME", xdg.to_str().unwrap());
+        let resolved = resolve_configuration_from_dir(dir.path(), None, None, None, None).unwrap();
+        assert_eq!(resolved.default_format, Format::Toml);
+        assert_eq!(resolved.output, OutputFormat::Plain);
+        assert_eq!(resolved.schema, Some(global_schema));
+        assert_eq!(resolved.ignore, vec!["g/**".to_string()]);
+
+        // Empty/whitespace MDFM_* env vars fall back to config values.
+        env.set("MDFM_FORMAT", "   ");
+        env.set("MDFM_OUTPUT", " ");
+        env.set("MDFM_SCHEMA", " ");
+        let resolved_ws =
+            resolve_configuration_from_dir(dir.path(), None, None, None, None).unwrap();
+        assert_eq!(resolved_ws.default_format, Format::Toml);
+        assert_eq!(resolved_ws.output, OutputFormat::Plain);
+        assert_eq!(resolved_ws.schema, None);
+
+        // Non-empty MDFM_* env vars override global config.
+        env.set("MDFM_FORMAT", "yaml");
+        env.set("MDFM_OUTPUT", "json");
+        env.set("MDFM_SCHEMA", "env-schema.json");
+        let resolved_env =
+            resolve_configuration_from_dir(dir.path(), None, None, None, None).unwrap();
+        assert_eq!(resolved_env.default_format, Format::Yaml);
+        assert_eq!(resolved_env.output, OutputFormat::Json);
+        assert_eq!(resolved_env.schema, Some(PathBuf::from("env-schema.json")));
+
+        // MDFM_CONFIG loads explicit JSON config.
+        let json_cfg_path = dir.path().join("explicit.json");
+        fs::write(
+            &json_cfg_path,
+            r#"{"default_format":"toml","output":"plain"}"#,
+        )
+        .unwrap();
+        env.remove("MDFM_FORMAT");
+        env.remove("MDFM_OUTPUT");
+        env.remove("MDFM_SCHEMA");
+        env.set("MDFM_CONFIG", json_cfg_path.to_str().unwrap());
+        let resolved_cfg =
+            resolve_configuration_from_dir(dir.path(), None, None, None, None).unwrap();
+        assert_eq!(resolved_cfg.default_format, Format::Toml);
+        assert_eq!(resolved_cfg.output, OutputFormat::Plain);
+
+        // default_global_config_paths fallback order: HOME -> APPDATA -> USERPROFILE -> none.
+        env.remove("XDG_CONFIG_HOME");
+        env.set("HOME", "/tmp/home-test");
+        let home_paths = default_global_config_paths();
+        assert!(home_paths[0].ends_with(".config/mdfm/config.toml"));
+
+        env.remove("HOME");
+        env.set("APPDATA", "/tmp/appdata-test");
+        let appdata_paths = default_global_config_paths();
+        assert!(appdata_paths[0].ends_with("mdfm/config.toml"));
+
+        env.remove("APPDATA");
+        env.set("USERPROFILE", "/tmp/userprofile-test");
+        let up_paths = default_global_config_paths();
+        assert!(up_paths[0].ends_with(".config/mdfm/config.toml"));
+
+        env.remove("USERPROFILE");
+        assert!(default_global_config_paths().is_empty());
     }
 
     #[test]

@@ -300,4 +300,73 @@ tags = [\"rust\", \"cli\"]
             Err(FrontmatterError::UnsupportedValue { .. })
         ));
     }
+
+    #[test]
+    fn toml_arrays_of_tables_inline_nesting_and_types() {
+        assert!(parse_toml("   \n").unwrap().is_empty());
+
+        let raw = "\
+title = \"Doc\"
+rating = 4.5
+published = 2026-11-24T12:00:00Z
+nested = { inner = { k = \"v\" }, arr = [10, 20], scalar = 1 }
+
+[section]
+key = \"val\"
+
+[[items]]
+name = \"first\"
+tags = [\"a\", \"b\"]
+";
+        let mut doc = parse_toml(raw).unwrap();
+
+        // ArrayOfTables, InlineTable nesting, Array indexing, Datetime, Float.
+        assert_eq!(get(&doc, "items.0.name"), Some(json!("first")));
+        assert_eq!(get(&doc, "items.0.tags.1"), Some(json!("b")));
+        assert_eq!(get(&doc, "items.bad"), None);
+        assert_eq!(get(&doc, "items.0.name.sub"), None);
+        assert_eq!(get(&doc, "nested.inner.k"), Some(json!("v")));
+        assert_eq!(get(&doc, "nested.arr.0"), Some(json!(10)));
+        assert_eq!(get(&doc, "nested.scalar.sub"), None);
+        assert_eq!(get(&doc, "title.sub"), None);
+        assert_eq!(get(&doc, "rating"), Some(json!(4.5)));
+        assert_eq!(get(&doc, "published"), Some(json!("2026-11-24T12:00:00Z")));
+
+        let full = document_to_json(&doc).unwrap();
+        assert_eq!(full["items"][0]["name"], json!("first"));
+        assert_eq!(full["nested"]["inner"]["k"], json!("v"));
+
+        // Nested InlineTable set, insert, and NotAMapping errors.
+        set(&mut doc, "nested.deep.leaf", json!(true)).unwrap();
+        assert_eq!(get(&doc, "nested.deep.leaf"), Some(json!(true)));
+        set(&mut doc, "nested.added", json!("ok")).unwrap();
+        assert_eq!(get(&doc, "nested.added"), Some(json!("ok")));
+        assert!(matches!(
+            set(&mut doc, "title.sub", json!(1)),
+            Err(FrontmatterError::NotAMapping { .. })
+        ));
+        assert!(matches!(
+            set(&mut doc, "nested.scalar.sub", json!(1)),
+            Err(FrontmatterError::NotAMapping { .. })
+        ));
+
+        // Delete across standard [section] table before overwriting it.
+        assert!(del(&mut doc, "section.key").unwrap());
+        assert!(!del(&mut doc, "section.key").unwrap());
+
+        // Overwrite a [table] with a scalar and test float/array/object conversion.
+        set(&mut doc, "section", json!("replaced")).unwrap();
+        assert_eq!(get(&doc, "section"), Some(json!("replaced")));
+        set(&mut doc, "metrics", json!({"pi": 3.25, "nums": [1, 2.5]})).unwrap();
+        assert_eq!(get(&doc, "metrics.pi"), Some(json!(3.25)));
+        assert_eq!(get(&doc, "metrics.nums.1"), Some(json!(2.5)));
+
+        // Delete across standard table, nested inline table, and missing intermediates.
+        assert!(del(&mut doc, "nested.inner.k").unwrap());
+        assert!(!del(&mut doc, "nested.inner.k").unwrap());
+        assert!(!del(&mut doc, "nested.scalar.k").unwrap());
+        assert!(!del(&mut doc, "missing.path").unwrap());
+        assert!(del(&mut doc, "rating").unwrap());
+        assert!(!del(&mut doc, "rating").unwrap());
+    }
 }

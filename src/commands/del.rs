@@ -185,5 +185,129 @@ mod tests {
         let (keys2, paths2) = parse_del_args(&only_keys).unwrap();
         assert_eq!(keys2, only_keys);
         assert!(paths2.is_empty());
+
+        assert!(parse_del_args(&[]).is_err());
+    }
+
+    #[test]
+    fn del_execute_table_filters_unchanged_and_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let post = dir.path().join("post.md");
+        let plain = dir.path().join("plain.md");
+        fs::write(&post, "---\ntitle: Hello\ndraft: true\n---\nBody\n").unwrap();
+        fs::write(&plain, "# Body only\n").unwrap();
+
+        let table_cfg = ResolvedConfig {
+            output: OutputFormat::Table,
+            ..ResolvedConfig::default()
+        };
+
+        // Body-only file skipped -> empty table output.
+        let mut out = Vec::new();
+        execute(
+            &["draft".to_string(), plain.to_str().unwrap().to_string()],
+            false,
+            None,
+            &table_cfg,
+            &mut out,
+        )
+        .unwrap();
+        assert!(out.is_empty());
+
+        // Non-matching --where filter skips file.
+        let no_match = FilterExpr::parse("draft == false").unwrap();
+        let mut out = Vec::new();
+        execute(
+            &[
+                "draft".to_string(),
+                dir.path().to_str().unwrap().to_string(),
+            ],
+            false,
+            Some(&no_match),
+            &table_cfg,
+            &mut out,
+        )
+        .unwrap();
+        assert!(out.is_empty());
+
+        // Matching --where filter + missing key -> unchanged in table format.
+        let yes_match = FilterExpr::parse("draft == true").unwrap();
+        let mut out = Vec::new();
+        execute(
+            &[
+                "nonexistent".to_string(),
+                dir.path().to_str().unwrap().to_string(),
+            ],
+            false,
+            Some(&yes_match),
+            &table_cfg,
+            &mut out,
+        )
+        .unwrap();
+        assert!(String::from_utf8(out).unwrap().contains("unchanged"));
+
+        // Dry-run table output.
+        let mut out = Vec::new();
+        execute(
+            &["draft".to_string(), post.to_str().unwrap().to_string()],
+            true,
+            None,
+            &table_cfg,
+            &mut out,
+        )
+        .unwrap();
+        assert!(String::from_utf8(out)
+            .unwrap()
+            .contains("would delete (dry-run)"));
+
+        // Actual deletion in table output.
+        let mut out = Vec::new();
+        execute(
+            &["draft".to_string(), post.to_str().unwrap().to_string()],
+            false,
+            None,
+            &table_cfg,
+            &mut out,
+        )
+        .unwrap();
+        assert!(String::from_utf8(out).unwrap().contains("deleted"));
+
+        // Plain output for unchanged key.
+        let plain_cfg = ResolvedConfig {
+            output: OutputFormat::Plain,
+            ..ResolvedConfig::default()
+        };
+        let mut out = Vec::new();
+        execute(
+            &["draft".to_string(), post.to_str().unwrap().to_string()],
+            false,
+            None,
+            &plain_cfg,
+            &mut out,
+        )
+        .unwrap();
+        assert!(String::from_utf8(out).unwrap().contains("\tunchanged"));
+
+        // Invalid key path and malformed frontmatter error.
+        let mut err_out = Vec::new();
+        assert!(execute(
+            &["a..b".to_string(), post.to_str().unwrap().to_string()],
+            false,
+            None,
+            &table_cfg,
+            &mut err_out
+        )
+        .is_err());
+
+        let bad = dir.path().join("bad.md");
+        fs::write(&bad, "---\n[broken\n---\n").unwrap();
+        assert!(execute(
+            &["draft".to_string(), bad.to_str().unwrap().to_string()],
+            false,
+            None,
+            &table_cfg,
+            &mut err_out
+        )
+        .is_err());
     }
 }

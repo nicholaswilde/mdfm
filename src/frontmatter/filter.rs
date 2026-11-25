@@ -553,5 +553,87 @@ mod tests {
         assert!(FilterExpr::parse("draft ==").is_err());
         assert!(FilterExpr::parse(r#"title == "unterminated"#).is_err());
         assert!(FilterExpr::parse("(draft == true").is_err());
+        assert!(FilterExpr::parse("draft == true extra").is_err());
+        assert!(FilterExpr::parse("(draft == true extra").is_err());
+        assert!(FilterExpr::parse("== true").is_err());
+        assert!(FilterExpr::parse("draft == (true)").is_err());
+        assert!(FilterExpr::parse("title == \"bad\\").is_err());
+        assert!(FilterExpr::parse("draft @ true").is_err());
+        assert!(FilterExpr::parse("weight == 99999999999999999999999999999").is_err());
+    }
+
+    #[test]
+    fn filter_all_operators_types_and_escapes() {
+        let doc = json!({
+            "title": "Alpha Guide",
+            "empty_str": "",
+            "draft": false,
+            "count": 0,
+            "score": 2.5,
+            "neg": -10,
+            "date": "2026-06-15",
+            "note": null,
+            "tags": ["rust", "cli"],
+            "empty_arr": [],
+            "meta": { "k": "v" },
+            "empty_obj": {},
+            "escaped": "line1\nline2\r\t\\\"'\\x"
+        });
+
+        // Truthiness across all JSON value kinds.
+        assert!(!FilterExpr::parse("note").unwrap().matches(&doc));
+        assert!(!FilterExpr::parse("draft").unwrap().matches(&doc));
+        assert!(!FilterExpr::parse("count").unwrap().matches(&doc));
+        assert!(FilterExpr::parse("score").unwrap().matches(&doc));
+        assert!(!FilterExpr::parse("empty_str").unwrap().matches(&doc));
+        assert!(FilterExpr::parse("title").unwrap().matches(&doc));
+        assert!(!FilterExpr::parse("empty_arr").unwrap().matches(&doc));
+        assert!(FilterExpr::parse("tags").unwrap().matches(&doc));
+        assert!(!FilterExpr::parse("empty_obj").unwrap().matches(&doc));
+        assert!(FilterExpr::parse("meta").unwrap().matches(&doc));
+        assert!(FilterExpr::parse("!draft").unwrap().matches(&doc));
+        assert!(FilterExpr::parse("NOT draft").unwrap().matches(&doc));
+
+        // Array indexing and non-traversable paths.
+        assert!(FilterExpr::parse("tags.0 == 'rust'").unwrap().matches(&doc));
+        assert!(!FilterExpr::parse("tags.bad == 'rust'")
+            .unwrap()
+            .matches(&doc));
+        assert!(!FilterExpr::parse("title.sub == 'x'").unwrap().matches(&doc));
+
+        // Numeric & string ordering, equality, inequality, null, floats, negatives.
+        assert!(FilterExpr::parse("score == 2.5").unwrap().matches(&doc));
+        assert!(FilterExpr::parse("neg == -10").unwrap().matches(&doc));
+        assert!(FilterExpr::parse("note == null").unwrap().matches(&doc));
+        assert!(FilterExpr::parse("title != 'Other'").unwrap().matches(&doc));
+        assert!(FilterExpr::parse("missing != 'Other'")
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse("score > 2.0 && score < 3.0")
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse("score <= 2.5 || draft == true")
+            .unwrap()
+            .matches(&doc));
+        assert!(
+            FilterExpr::parse("date >= '2026-01-01' AND date < '2027-01-01'")
+                .unwrap()
+                .matches(&doc)
+        );
+        assert!(FilterExpr::parse("draft == true OR neg <= -10")
+            .unwrap()
+            .matches(&doc));
+        assert!(FilterExpr::parse("tags CONTAINS cli")
+            .unwrap()
+            .matches(&doc));
+
+        // Incompatible ordering & contains types evaluate to false.
+        assert!(!FilterExpr::parse("title > 5").unwrap().matches(&doc));
+        assert!(!FilterExpr::parse("count contains 0").unwrap().matches(&doc));
+
+        // String escape sequences in double-quoted literal.
+        assert!(FilterExpr::parse(r#"escaped == "line1\nline2\r\t\\\"'\x""#)
+            .unwrap()
+            .matches(&doc));
     }
 }

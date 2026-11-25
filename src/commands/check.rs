@@ -142,3 +142,108 @@ pub fn execute(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_errors_filters_body_only_and_table_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let valid = dir.path().join("valid.md");
+        let invalid = dir.path().join("invalid.md");
+        let bad_fm = dir.path().join("bad_fm.md");
+        let plain = dir.path().join("plain.md");
+        fs::write(&valid, "---\ntitle: Ok\ndraft: false\n---\nBody\n").unwrap();
+        fs::write(&invalid, "---\ntitle: \"\"\ndraft: \"yes\"\n---\nBody\n").unwrap();
+        fs::write(&bad_fm, "---\n[broken\n---\nBody\n").unwrap();
+        fs::write(&plain, "# Body only\n").unwrap();
+
+        // Missing schema config errors.
+        let no_schema_cfg = ResolvedConfig::default();
+        let mut out = Vec::new();
+        assert!(execute(std::slice::from_ref(&valid), None, &no_schema_cfg, &mut out).is_err());
+
+        // Nonexistent schema file errors.
+        let missing_schema_cfg = ResolvedConfig {
+            schema: Some(dir.path().join("missing.json")),
+            ..ResolvedConfig::default()
+        };
+        assert!(execute(
+            std::slice::from_ref(&valid),
+            None,
+            &missing_schema_cfg,
+            &mut out
+        )
+        .is_err());
+
+        // Invalid JSON in schema file errors.
+        let bad_json_schema = dir.path().join("bad_json.json");
+        fs::write(&bad_json_schema, "{not json").unwrap();
+        let bad_json_cfg = ResolvedConfig {
+            schema: Some(bad_json_schema),
+            ..ResolvedConfig::default()
+        };
+        assert!(execute(std::slice::from_ref(&valid), None, &bad_json_cfg, &mut out).is_err());
+
+        // Invalid JSON Schema specification errors.
+        let bad_spec_schema = dir.path().join("bad_spec.json");
+        fs::write(&bad_spec_schema, r#"{"type": 123}"#).unwrap();
+        let bad_spec_cfg = ResolvedConfig {
+            schema: Some(bad_spec_schema),
+            ..ResolvedConfig::default()
+        };
+        assert!(execute(std::slice::from_ref(&valid), None, &bad_spec_cfg, &mut out).is_err());
+
+        // Valid schema file.
+        let schema = dir.path().join("schema.json");
+        fs::write(
+            &schema,
+            r#"{"type":"object","required":["title","draft"],"properties":{"title":{"type":"string","minLength":1},"draft":{"type":"boolean"}}}"#,
+        )
+        .unwrap();
+
+        // Table output covering valid, invalid, bad frontmatter, and body-only ({}).
+        let table_cfg = ResolvedConfig {
+            output: OutputFormat::Table,
+            schema: Some(schema.clone()),
+            ..ResolvedConfig::default()
+        };
+        let mut table_out = Vec::new();
+        let res = execute(
+            &[
+                valid.clone(),
+                invalid.clone(),
+                bad_fm.clone(),
+                plain.clone(),
+            ],
+            None,
+            &table_cfg,
+            &mut table_out,
+        );
+        assert!(res.is_err());
+        let table_str = String::from_utf8(table_out).unwrap();
+        assert!(table_str.contains("ok"));
+        assert!(table_str.contains("fail"));
+        assert!(table_str.contains("bad_fm.md"));
+
+        // --where filter skips body-only and non-matching files, passes on valid file.
+        let filter = FilterExpr::parse("draft == false").unwrap();
+        let json_cfg = ResolvedConfig {
+            output: OutputFormat::Json,
+            schema: Some(schema),
+            ..ResolvedConfig::default()
+        };
+        let mut json_out = Vec::new();
+        execute(
+            &[valid, invalid, plain],
+            Some(&filter),
+            &json_cfg,
+            &mut json_out,
+        )
+        .unwrap();
+        let parsed: Vec<JsonValue> = serde_json::from_slice(&json_out).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0]["valid"], json!(true));
+    }
+}

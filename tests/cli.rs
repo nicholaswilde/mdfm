@@ -458,4 +458,137 @@ fn in_process_run_app_lifecycle() {
     .unwrap();
     mdfm::run_app(cli, &mut out).unwrap();
     assert!(String::from_utf8(out).unwrap().contains("\tok"));
+
+    let mut out = Vec::new();
+    let cli = mdfm::Cli::try_parse_from([
+        "mdfm",
+        "--config",
+        cfg.to_str().unwrap(),
+        "del",
+        "author.role",
+        post.to_str().unwrap(),
+    ])
+    .unwrap();
+    mdfm::run_app(cli, &mut out).unwrap();
+    assert!(String::from_utf8(out).unwrap().contains("\tdeleted"));
+}
+
+#[test]
+fn cli_env_vars_global_config_completions_and_table_outputs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let yaml_file = copy_fixture("yaml_post.md", tmp.path());
+    let toml_file = copy_fixture("toml_post.md", tmp.path());
+    let plain_file = copy_fixture("no_frontmatter.md", tmp.path());
+    let schema = copy_fixture("schema.json", tmp.path());
+
+    // Shell completions via binary.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["completions", "bash"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("mdfm"));
+
+    // MDFM_FORMAT + MDFM_OUTPUT + MDFM_SCHEMA env vars.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.env("MDFM_FORMAT", "toml")
+        .env("MDFM_OUTPUT", "table")
+        .args(["set", "title=EnvCreated", "draft=false", "--dry-run"])
+        .arg(&plain_file)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("would create (dry-run)"));
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.env("MDFM_SCHEMA", &schema)
+        .env("MDFM_OUTPUT", "table")
+        .args(["--where", "draft == false", "check"])
+        .arg(tmp.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("ok"));
+
+    // Table output for del (dry-run + deleted + unchanged) and multi-file plain get.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["--output", "plain", "get", "title"])
+        .arg(&yaml_file)
+        .arg(&toml_file)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\tTOML Post"));
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args([
+        "--output",
+        "table",
+        "--where",
+        "draft == true",
+        "del",
+        "draft",
+        "--dry-run",
+    ])
+    .arg(tmp.path())
+    .assert()
+    .success()
+    .stdout(predicate::str::contains("would delete (dry-run)"));
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["--output", "table", "del", "missing_key"])
+        .arg(&toml_file)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("unchanged"));
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["--output", "table", "del", "draft"])
+        .arg(&yaml_file)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("deleted"));
+
+    // Global config via XDG_CONFIG_HOME (YAML) and explicit MDFM_CONFIG (JSON).
+    let xdg = tmp.path().join("xdg");
+    let mdfm_dir = xdg.join("mdfm");
+    fs::create_dir_all(&mdfm_dir).unwrap();
+    fs::write(
+        mdfm_dir.join("config.yaml"),
+        "default_format: yaml\noutput: json\n",
+    )
+    .unwrap();
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.env("XDG_CONFIG_HOME", &xdg)
+        .args(["get", "title"])
+        .arg(&toml_file)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(r#""value": "TOML Post""#));
+
+    let json_cfg = tmp.path().join("cfg.json");
+    fs::write(&json_cfg, r#"{"output":"plain"}"#).unwrap();
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.env("MDFM_CONFIG", &json_cfg)
+        .args(["get", "title"])
+        .arg(&toml_file)
+        .assert()
+        .success()
+        .stdout("TOML Post\n");
+
+    // Error paths: invalid --where, missing schema, nonexistent path.
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["--where", "draft ==", "get", "title"])
+        .arg(&toml_file)
+        .assert()
+        .failure();
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["check"])
+        .arg(&toml_file)
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("No JSON Schema specified"));
+
+    let Some(mut cmd) = mdfm_cmd() else { return };
+    cmd.args(["get", "title"])
+        .arg(tmp.path().join("does-not-exist.md"))
+        .assert()
+        .failure();
 }

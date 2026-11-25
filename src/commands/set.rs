@@ -236,5 +236,124 @@ mod tests {
         assert_eq!(assignments[0], ("draft".to_string(), json!(false)));
         assert_eq!(assignments[1], ("author.name".to_string(), json!("Nick")));
         assert_eq!(paths, vec![PathBuf::from("posts/hello.md")]);
+
+        // Error cases: empty key and no assignments.
+        assert!(parse_set_args(&["=value".to_string()]).is_err());
+        assert!(parse_set_args(&["posts/hello.md".to_string()]).is_err());
+
+        // Existing path containing '=' is treated as a file path, not an assignment.
+        let dir = tempfile::tempdir().unwrap();
+        let eq_file = dir.path().join("a=b.md");
+        fs::write(&eq_file, "---\ntitle: Eq\n---\n").unwrap();
+        let (a2, p2) = parse_set_args(&[
+            "draft=true".to_string(),
+            eq_file.to_str().unwrap().to_string(),
+        ])
+        .unwrap();
+        assert_eq!(a2.len(), 1);
+        assert_eq!(p2, vec![eq_file]);
+    }
+
+    #[test]
+    fn set_execute_table_filters_dry_run_unchanged_and_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let post = dir.path().join("post.md");
+        let plain = dir.path().join("plain.md");
+        fs::write(&post, "---\ntitle: Hello\ndraft: true\n---\nBody\n").unwrap();
+        fs::write(&plain, "# Body only\n").unwrap();
+
+        let table_cfg = ResolvedConfig {
+            output: OutputFormat::Table,
+            ..ResolvedConfig::default()
+        };
+
+        // Dry-run creating frontmatter on body-only file in table format.
+        let mut out = Vec::new();
+        execute(
+            &[
+                "title=Created".to_string(),
+                plain.to_str().unwrap().to_string(),
+            ],
+            true,
+            None,
+            &table_cfg,
+            &mut out,
+        )
+        .unwrap();
+        assert!(String::from_utf8(out)
+            .unwrap()
+            .contains("would create (dry-run)"));
+
+        // Unchanged set in table format.
+        let mut out = Vec::new();
+        execute(
+            &["draft=true".to_string(), post.to_str().unwrap().to_string()],
+            false,
+            None,
+            &table_cfg,
+            &mut out,
+        )
+        .unwrap();
+        assert!(String::from_utf8(out).unwrap().contains("unchanged"));
+
+        // --where filter skips body-only file and non-matching file -> empty table output.
+        let filter = FilterExpr::parse("draft == false").unwrap();
+        let mut out = Vec::new();
+        execute(
+            &[
+                "draft=false".to_string(),
+                dir.path().to_str().unwrap().to_string(),
+            ],
+            false,
+            Some(&filter),
+            &table_cfg,
+            &mut out,
+        )
+        .unwrap();
+        assert!(out.is_empty());
+
+        // --where filter matching file updates in dry-run table mode.
+        let filter_match = FilterExpr::parse("draft == true").unwrap();
+        let mut out = Vec::new();
+        execute(
+            &[
+                "draft=false".to_string(),
+                dir.path().to_str().unwrap().to_string(),
+            ],
+            true,
+            Some(&filter_match),
+            &table_cfg,
+            &mut out,
+        )
+        .unwrap();
+        assert!(String::from_utf8(out)
+            .unwrap()
+            .contains("would update (dry-run)"));
+
+        // Traversing scalar key returns error.
+        let mut err_out = Vec::new();
+        assert!(execute(
+            &[
+                "title.sub=1".to_string(),
+                post.to_str().unwrap().to_string()
+            ],
+            false,
+            None,
+            &table_cfg,
+            &mut err_out
+        )
+        .is_err());
+
+        // Malformed frontmatter returns parse error.
+        let bad = dir.path().join("bad.md");
+        fs::write(&bad, "---\n[broken\n---\n").unwrap();
+        assert!(execute(
+            &["draft=false".to_string(), bad.to_str().unwrap().to_string()],
+            false,
+            None,
+            &table_cfg,
+            &mut err_out
+        )
+        .is_err());
     }
 }

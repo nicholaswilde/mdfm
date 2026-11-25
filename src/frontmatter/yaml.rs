@@ -211,4 +211,64 @@ mod tests {
             Err(FrontmatterError::NotAMapping { .. })
         ));
     }
+
+    #[test]
+    fn yaml_edge_cases_types_keys_and_errors() {
+        // Empty and null YAML parse to empty mapping; sequence root errors.
+        assert!(parse_yaml("  \n").unwrap().is_empty());
+        assert!(parse_yaml("~\n").unwrap().is_empty());
+        assert_eq!(serialize_yaml(&Mapping::new()).unwrap(), "");
+        assert!(matches!(
+            parse_yaml("- a\n- b\n"),
+            Err(FrontmatterError::InvalidRoot {
+                format: Format::Yaml
+            })
+        ));
+
+        // Non-string keys, floats, unsigned ints, null, tagged values.
+        let raw = "\
+true: bool_key
+42: num_key
+null: null_key
+[1, 2]: seq_key
+float_val: 1.5
+nan_val: .nan
+big_u64: 18446744073709551615
+empty: null
+tagged: !custom hello
+scalar: text
+";
+        let mut map = parse_yaml(raw).unwrap();
+        let json_obj = mapping_to_json(&map).unwrap();
+        assert_eq!(json_obj["true"], json!("bool_key"));
+        assert_eq!(json_obj["42"], json!("num_key"));
+        assert_eq!(json_obj["null"], json!("null_key"));
+        assert_eq!(json_obj["float_val"], json!(1.5));
+        assert_eq!(json_obj["nan_val"], json!(null));
+        assert_eq!(json_obj["big_u64"], json!(u64::MAX));
+        assert_eq!(json_obj["empty"], json!(null));
+        assert_eq!(json_obj["tagged"], json!("hello"));
+
+        // Traversing through scalar in get/del.
+        assert_eq!(get(&map, "scalar.sub"), None);
+        assert!(!del(&mut map, "missing.sub").unwrap());
+        assert!(!del(&mut map, "scalar.sub").unwrap());
+
+        // json_to_yaml for Null, u64, f64, Array, Object.
+        set(
+            &mut map,
+            "complex",
+            json!({
+                "n": null,
+                "u": u64::MAX,
+                "f": 2.75,
+                "arr": [1, true, "s"]
+            }),
+        )
+        .unwrap();
+        assert_eq!(get(&map, "complex.n"), Some(json!(null)));
+        assert_eq!(get(&map, "complex.u"), Some(json!(u64::MAX)));
+        assert_eq!(get(&map, "complex.f"), Some(json!(2.75)));
+        assert_eq!(get(&map, "complex.arr.2"), Some(json!("s")));
+    }
 }
