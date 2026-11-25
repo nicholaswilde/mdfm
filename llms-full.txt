@@ -45,20 +45,24 @@ mdfm/
 ├── llms-full.txt              # Compiled full-context documentation (this file)
 ├── LICENSE                    # Apache License 2.0
 ├── assets/
-│   └── config.example.toml    # Annotated example configuration file
-├── docs/
-│   └── README.md              # Project overview, installation, and quickstart
+│   ├── config.example.toml    # Annotated example configuration file
+│   └── mdfm.1                 # Generated UNIX roff man page
+├── completions/               # Pre-generated bash, zsh, fish, powershell, elvish completions
+├── docs/                      # Zensical documentation site (index, about, installation, usage, configuration, security, CONTRIBUTING, CODE_OF_CONDUCT, README)
+├── zensical.toml              # Zensical static site configuration
+├── pyproject.toml             # Python / uv environment for Zensical
 ├── scripts/
 │   ├── release.sh             # Version bump, validation, tagging, and atomic push
 │   └── release_summary.py     # Categorized GitHub release notes generator
 ├── .github/
 │   └── workflows/
-│       ├── ci.yml             # Multi-OS/arch tests, rustfmt, clippy, rumdl, Coveralls
+│       ├── ci.yml             # Multi-OS/arch tests, rustfmt, clippy, rumdl, taplo, Coveralls
+│       ├── docs.yml           # Zensical build and GitHub Pages deploy
 │       └── release.yml        # Multi-arch archives, .deb apt publish, Homebrew & Scoop dispatches
 ├── src/
 │   ├── main.rs                # Thin binary wrapper calling mdfm::run()
 │   ├── lib.rs                 # Library exports and CLI dispatch (run, run_app)
-│   ├── cli.rs                 # clap derive/env definitions (get, set, del, check)
+│   ├── cli.rs                 # clap derive/env definitions (get, set, del, check, completions, man, update)
 │   ├── config.rs              # Layered configuration resolver and local .mdfm.toml discovery
 │   ├── frontmatter/
 │   │   ├── mod.rs             # Zero-copy byte-offset splitter, renderer, FrontmatterData enum
@@ -70,7 +74,8 @@ mdfm/
 │       ├── get.rs             # get subcommand handler
 │       ├── set.rs             # set subcommand handler (--dry-run, typed CLI value parser)
 │       ├── del.rs             # del subcommand handler (--dry-run)
-│       └── check.rs           # check JSON Schema validation subcommand handler
+│       ├── check.rs           # check JSON Schema validation subcommand handler
+│       └── update.rs          # update GitHub release self-updater (--check, -y, --version)
 └── tests/
     ├── cli.rs                 # End-to-end CLI and CRLF preservation integration tests
     └── fixtures/              # Sample YAML, TOML, invalid, body-only Markdown & JSON Schema
@@ -79,10 +84,11 @@ mdfm/
 ### Technology Stack
 
 - **Language & Edition:** Rust (Edition 2021)
-- **CLI Parsing:** `clap` 4.5 (`derive`, `env`)
+- **CLI Parsing:** `clap` 4.5 (`derive`, `env`), `clap_complete` 4.5, `clap_mangen` 0.3
 - **Frontmatter & Serialization:** `toml_edit` 0.22, `toml` 0.8, `serde` 1.0, `serde_json` 1.0, `serde_yaml_ng` 0.10
 - **Directory Walking:** `ignore` 0.4
 - **Schema Validation:** `jsonschema` 0.29 (`default-features = false`)
+- **Self-Update:** `self_update` 1.3 (`ureq`, `rustls`, `github`, tar/zip, checksums)
 - **Terminal Output:** `comfy-table` 7.1, `owo-colors` 4.2 (`supports-colors`)
 - **Error Handling:** `thiserror` 2.0, `anyhow` 1.0
 - **Testing:** `assert_cmd` 2.0, `predicates` 3.1, `tempfile` 3.16
@@ -200,6 +206,18 @@ mdfm check --schema .mdfm-schema.json posts/
 mdfm --output json check --schema schema.json docs/
 ```
 
+### `mdfm completions <SHELL>`
+
+Generate shell completion scripts (`bash`, `zsh`, `fish`, `powershell`, `elvish`) to stdout.
+
+### `mdfm man`
+
+Render UNIX roff man page to stdout (`mdfm man > assets/mdfm.1`).
+
+### `mdfm update [--check] [-y|--yes] [--version <VERSION>]`
+
+Check for or install releases directly from `nicholaswilde/mdfm` GitHub Releases (pure-Rust `ureq` + `rustls`, skips `.sha256`/`.deb`, verifies non-interactive TTY confirmation).
+
 ---
 
 ## Filter Expressions (`--where`)
@@ -289,6 +307,9 @@ ignore = ["drafts/**", "CHANGELOG.md"]
 | `task fmt` / `task fmt:check` | Format / verify Rust formatting (`cargo fmt --all`) |
 | `task clippy` | Run `cargo clippy --workspace --all-targets --all-features -- -D warnings` |
 | `task lint:md` / `task fmt:md` | Lint / format Markdown via `rumdl` |
+| `task lint:toml` / `task fmt:toml` | Lint / format TOML via `taplo` |
+| `task completions` / `task man` | Regenerate `completions/*` and `assets/mdfm.1` |
+| `task serve` / `task docs:build` | Serve or build static Zensical site via `uv run` |
 | `task build:debug` / `task build:local` | Build debug or local release binary |
 | `task build` | Cross-compile `amd64`, `arm64`, `armv7`, `armv6` via `cross` |
 | `task coverage` / `task coverage:report` | Generate coverage summary or `lcov.info` via `cargo-llvm-cov` |

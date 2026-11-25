@@ -7,6 +7,12 @@
 ## Documentation
 
 - [docs/README.md](docs/README.md): Project overview, installation, and usage quickstart.
+- [docs/index.md](docs/index.md): Zensical documentation home page (`https://nicholaswilde.io/mdfm`).
+- [docs/about.md](docs/about.md): Feature overview and preservation guarantees.
+- [docs/installation.md](docs/installation.md): Homebrew, APT, Scoop, GitHub Releases, self-update, completions, and man page setup.
+- [docs/usage.md](docs/usage.md): Full CLI usage reference (`get`, `set`, `del`, `check`, `completions`, `man`, `update`).
+- [docs/configuration.md](docs/configuration.md): Layered configuration precedence, TOML/YAML/JSON examples, and `MDFM_*` env vars.
+- [docs/security.md](docs/security.md): Data integrity guarantees, safe mutation practices, checksum verification, and vulnerability disclosure.
 - [AGENTS.md](AGENTS.md): Architecture, tech stack, conventions, and quality gates.
 - [assets/config.example.toml](assets/config.example.toml): Annotated example configuration file.
 - [Full Context (llms-full.txt)](llms-full.txt): Single-file compiled documentation, CLI reference, filter syntax, and architecture specs for LLMs.
@@ -15,7 +21,7 @@
 
 - [src/main.rs](src/main.rs): Thin CLI binary entry point delegating to `mdfm::run()`.
 - [src/lib.rs](src/lib.rs): Library exports and command dispatch (`run`, `run_app`).
-- [src/cli.rs](src/cli.rs): `clap` CLI flags and subcommands (`get`, `set`, `del`, `check`).
+- [src/cli.rs](src/cli.rs): `clap` CLI flags, subcommands (`get`, `set`, `del`, `check`, `completions`, `man`, `update`), and `generate_manpage`.
 - [src/config.rs](src/config.rs): Layered configuration precedence (CLI > `MDFM_*` env > `.mdfm.toml` > user global config > defaults).
 - [src/frontmatter/mod.rs](src/frontmatter/mod.rs): Zero-copy byte-offset frontmatter splitter, renderer, and `FrontmatterData` enum.
 - [src/frontmatter/yaml.rs](src/frontmatter/yaml.rs): YAML dot-path get/set/del helpers.
@@ -26,18 +32,23 @@
 - [src/commands/set.rs](src/commands/set.rs): `set` subcommand handler (`--dry-run`, typed value parsing).
 - [src/commands/del.rs](src/commands/del.rs): `del` subcommand handler (`--dry-run`).
 - [src/commands/check.rs](src/commands/check.rs): `check` JSON Schema validation subcommand handler.
+- [src/commands/update.rs](src/commands/update.rs): `update` GitHub release self-updater (`--check`, `-y`/`--yes`, `--version`).
 
 ## Build & Automation
 
 - [Cargo.toml](Cargo.toml): Rust crate manifest, dependencies, release/CI build profiles, and `cargo-deb` metadata.
-- [Taskfile.yml](Taskfile.yml): Task runner for build, cross-compile, test, lint, coverage, and release.
+- [Taskfile.yml](Taskfile.yml): Task runner for build, cross-compile, test, lint (`rumdl`/`taplo`), completions, man page, docs, coverage, and release.
+- [zensical.toml](zensical.toml): Zensical static documentation site configuration.
 - [build.rs](build.rs): Compile-time git version injection (`PROJECT_VERSION`).
 - [scripts/release.sh](scripts/release.sh): Automated version bump, tag, and atomic push script.
 - [scripts/release_summary.py](scripts/release_summary.py): Categorized GitHub release notes generator.
 
 ## Optional
 
-- [.github/workflows/ci.yml](.github/workflows/ci.yml): Multi-OS and multi-arch CI matrix (`rustfmt`, `clippy`, `rumdl`, `cross`, Coveralls).
+- [.github/workflows/ci.yml](.github/workflows/ci.yml): Multi-OS and multi-arch CI matrix (`rustfmt`, `clippy`, `rumdl`, `taplo`, `cross`, Coveralls).
+- [.github/workflows/docs.yml](.github/workflows/docs.yml): Zensical documentation build and GitHub Pages deployment.
 - [.github/workflows/release.yml](.github/workflows/release.yml): Automated release archives, `.deb` publishing, Homebrew tap, and Scoop bucket updates.
+- [assets/mdfm.1](assets/mdfm.1): Generated UNIX roff man page.
+- [completions/](completions/): Pre-generated shell completions (bash, zsh, fish, powershell, elvish).
 - [tests/cli.rs](tests/cli.rs): End-to-end CLI integration tests and CRLF preservation suite.
 - [LICENSE](LICENSE): Apache License 2.0.
